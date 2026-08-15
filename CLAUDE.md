@@ -50,9 +50,15 @@ with psycopg.connect(os.environ['SUPABASE_DATABASE_URL']) as c:
 ## 검증 (태스크·마일스톤 완료 시 3종 모두 통과 필수)
 
 ```bash
+# 파이프라인 (프로젝트 루트)
 ruff check .          # 1. 린트
 mypy pipeline/        # 2. 타입 체크 (strict)
 pytest tests/ -v      # 3. 테스트
+
+# 프론트 (web/)
+npm run lint          # 1. 린트
+npm test              # 2. 테스트 (vitest)
+npm run build         # 3. 빌드 (타입 체크 포함)
 ```
 
 ## 자격증명 (중요)
@@ -98,9 +104,10 @@ OHLCV 조회는 자격증명 없이도 동작하므로, 증상이 "종목목록�
 
 ## 진행 상태
 
-- **M0·M1 완료, M2 거의 완료** (2026-08-15)
-  - `ksc_tickers` 200종목 · `ksc_bars` 182,307행 (일 144,028 / 주 30,976 / 월 7,303), 46MB
-  - `--update` 증분 갱신·휴장일 처리·수정주가 소급 감지 동작 확인
-  - 남은 것: GitHub 리포 생성 후 Actions Secrets 등록·실트리거. 다음은 M3(프론트).
+- **M0~M3 완료** (2026-08-15). 다음은 M4(차트).
+  - 데이터: `ksc_tickers` 200종목 · `ksc_bars` 182,307행 (일 144,028 / 주 30,976 / 월 7,303), 46MB
+  - 자동화: GitHub Actions `daily.yml` 실행 성공 확인 (평일 18:00 KST cron)
+  - 프론트: `web/` Next.js 16 + Supabase 조회 계층 + TickerRail, Vitest 51개 통과
+  - 리포: `daehyub71/krx-stock-charts` (**private** — 공개하려면 `gh repo edit --visibility public`)
 - **DESIGN §5 확정 완료** (2026-08-15) — 따뜻한 종이 톤 / 적색 상승·청색 하락 / 시안 레이아웃 / lightweight-charts.
   통계 타일 구성(E)만 시안안 기본값이며 M4 전까지 변경 가능. **M4 착수 조건 충족.**
