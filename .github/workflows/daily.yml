@@ -1,0 +1,54 @@
+name: Daily KRX update
+
+# 평일 18:00 KST = 09:00 UTC. KRX 정규장 마감(15:30 KST) 이후 충분한 여유를 둔다.
+on:
+  schedule:
+    - cron: "0 9 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '갱신할 거래일 (YYYYMMDD, 비우면 오늘)'
+        required: false
+        type: string
+
+# 최소 권한: 이 워크플로는 리포에 쓰지 않는다 (데이터는 Supabase로 간다).
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-krx-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 종목 유니버스를 먼저 갱신한다 — KOSPI200 정기 변경으로 편입된 종목을
+      # 당일 갱신 대상에 포함시키기 위해서다 (PLAN §6).
+      - name: Refresh ticker universe
+        env:
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m pipeline.main --universe ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
+
+      - name: Incremental update
+        env:
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -m pipeline.main --update ${{ inputs.date && format('--date {0}', inputs.date) || '' }}

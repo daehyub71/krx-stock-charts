@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest>=8.0
+ruff>=0.6
+mypy>=1.11
+pandas-stubs>=2.2
+# 스키마 적용 전용 (supabase-py는 DDL 미지원) — 파이프라인 런타임에는 불필요
+psycopg[binary]>=3.2

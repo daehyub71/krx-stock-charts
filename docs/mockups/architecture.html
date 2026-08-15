@@ -1,0 +1,1094 @@
+<title>시세판 아키텍처</title>
+<style>
+  :root {
+    --paper:   #FAF9F5;
+    --surface: #FFFEFB;
+    --inset:   #F1EFE7;
+    --ink:     #1E1D1A;
+    --ink-2:   #57544C;
+    --ink-3:   #8B8578;
+    --rule:    #E4E1D7;
+    --rule-2:  #EFEDE5;
+    --accent:  #C15F3C;
+    --accent-w:#C15F3C1A;
+    --up:      #C8372D;
+    --down:    #2E6FBF;
+    --grid-off:#E0DCD0;
+    --shadow: 0 1px 2px #1e1d1a0d, 0 8px 24px -14px #1e1d1a1f;
+    --sans: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard,
+            "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:   #1B1A19;
+      --surface: #262624;
+      --inset:   #2F2E2B;
+      --ink:     #F4F2EB;
+      --ink-2:   #B3AEA2;
+      --ink-3:   #857F74;
+      --rule:    #3A3934;
+      --rule-2:  #302F2C;
+      --accent:  #D97757;
+      --accent-w:#D9775726;
+      --up:      #E0655A;
+      --down:    #5A9BE8;
+      --grid-off:#3D3C37;
+      --shadow: 0 1px 2px #00000040, 0 8px 24px -14px #00000073;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:   #1B1A19;
+    --surface: #262624;
+    --inset:   #2F2E2B;
+    --ink:     #F4F2EB;
+    --ink-2:   #B3AEA2;
+    --ink-3:   #857F74;
+    --rule:    #3A3934;
+    --rule-2:  #302F2C;
+    --accent:  #D97757;
+    --accent-w:#D9775726;
+    --up:      #E0655A;
+    --down:    #5A9BE8;
+    --grid-off:#3D3C37;
+    --shadow: 0 1px 2px #00000040, 0 8px 24px -14px #00000073;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 0 24px; }
+  .measure { max-width: 66ch; }
+
+  .eyebrow {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+
+  /* ── 헤더 ── */
+  header.top {
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface);
+  }
+  .top-in { display: flex; align-items: center; gap: 12px; padding: 13px 24px; max-width: 1000px; margin: 0 auto; }
+  .mark { width: 27px; height: 27px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; flex: none; }
+  .top-name { font-size: 14px; font-weight: 650; letter-spacing: -.01em; }
+  .top-name span { color: var(--ink-3); font-weight: 400; margin-left: 7px; font-size: 12px; }
+  .theme-btn {
+    margin-left: auto; font: inherit; font-size: 12px; color: var(--ink-2);
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 7px;
+    padding: 4px 11px; cursor: pointer;
+  }
+  .theme-btn:hover { border-color: var(--ink-3); color: var(--ink); }
+
+  /* ── 히어로 ── */
+  .hero { padding: 54px 0 8px; }
+  h1 {
+    font-size: clamp(30px, 5.2vw, 44px);
+    line-height: 1.12; font-weight: 680; letter-spacing: -.032em;
+    margin: 10px 0 16px; text-wrap: balance;
+  }
+  .lede { font-size: 17.5px; color: var(--ink-2); max-width: 60ch; margin: 0; text-wrap: pretty; }
+  .lede b { color: var(--ink); font-weight: 600; }
+
+  /* ── 섹션 ── */
+  section { padding: 46px 0 0; }
+  h2 {
+    font-size: clamp(21px, 3vw, 26px); font-weight: 660; letter-spacing: -.022em;
+    margin: 8px 0 12px; text-wrap: balance;
+  }
+  h3 { font-size: 15px; font-weight: 620; margin: 26px 0 6px; }
+  p { margin: 0 0 15px; color: var(--ink-2); text-wrap: pretty; }
+  p strong, li strong { color: var(--ink); font-weight: 600; }
+  code {
+    font-family: var(--mono); font-size: .88em;
+    background: var(--inset); border: 1px solid var(--rule-2);
+    border-radius: 4px; padding: 1px 5px;
+  }
+  .divider { height: 1px; background: var(--rule); margin: 52px 0 0; border: 0; }
+
+  /* ── 도형 ── */
+  figure {
+    margin: 26px 0 20px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 13px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .fig-body { padding: 20px 20px 6px; overflow-x: auto; }
+  figure svg { display: block; width: 100%; height: auto; min-width: 520px; }
+  figcaption {
+    font-size: 12.5px; color: var(--ink-3);
+    padding: 12px 20px 14px; border-top: 1px solid var(--rule-2);
+    background: var(--inset);
+  }
+  figcaption b { color: var(--ink-2); font-weight: 600; }
+
+  /* 도형 내부 공통 */
+  .d-box  { fill: var(--inset); stroke: var(--rule); }
+  .d-box2 { fill: var(--surface); stroke: var(--rule); }
+  .d-hi   { fill: var(--accent-w); stroke: var(--accent); }
+  .d-t    { fill: var(--ink); font-size: 12.5px; font-family: var(--sans); }
+  .d-t2   { fill: var(--ink-2); font-size: 11.5px; font-family: var(--sans); }
+  .d-t3   { fill: var(--ink-3); font-size: 10.5px; font-family: var(--sans); letter-spacing: .07em; }
+  .d-m    { fill: var(--ink-2); font-size: 11px; font-family: var(--mono); }
+  .d-acc  { fill: var(--accent); font-size: 11.5px; font-family: var(--sans); font-weight: 600; }
+  .d-line { stroke: var(--ink-3); fill: none; }
+  .d-dash { stroke: var(--ink-3); fill: none; stroke-dasharray: 4 3; }
+
+  /* ── 컨트롤 ── */
+  .ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; padding: 15px 20px 4px; }
+  .ctl-label { font-size: 11px; color: var(--ink-3); letter-spacing: .06em; text-transform: uppercase; font-weight: 600; }
+  .segmented { display: inline-flex; background: var(--inset); border: 1px solid var(--rule); border-radius: 8px; padding: 2px; gap: 2px; }
+  .seg {
+    font: inherit; font-size: 12.5px; font-weight: 550; color: var(--ink-2);
+    background: none; border: 0; border-radius: 6px; padding: 5px 13px; cursor: pointer;
+  }
+  .seg:hover { color: var(--ink); }
+  .seg[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px #1e1d1a12; }
+  :root[data-theme="dark"] .seg[aria-pressed="true"] { box-shadow: 0 1px 2px #00000059; }
+  .readout { margin-left: auto; font-size: 12.5px; color: var(--ink-2); }
+  .readout b { font-family: var(--mono); color: var(--accent); font-size: 15px; font-weight: 650; }
+
+  /* ── 표 ── */
+  .tbl-wrap { overflow-x: auto; margin: 20px 0; border: 1px solid var(--rule); border-radius: 11px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { padding: 9px 15px; text-align: left; border-bottom: 1px solid var(--rule-2); }
+  thead th {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-3); background: var(--inset); border-bottom: 1px solid var(--rule); white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  td.n { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+  td.win { color: var(--accent); font-weight: 650; }
+  td.lose { color: var(--ink-3); }
+  tbody td:first-child { color: var(--ink); font-weight: 550; }
+
+  /* ── 콜아웃 ── */
+  .call {
+    border-left: 2px solid var(--accent);
+    background: var(--accent-w);
+    border-radius: 0 9px 9px 0;
+    padding: 13px 17px;
+    margin: 22px 0;
+  }
+  .call p { margin: 0; color: var(--ink-2); font-size: 14px; }
+  .call p + p { margin-top: 8px; }
+
+  ul { color: var(--ink-2); padding-left: 19px; margin: 0 0 15px; }
+  li { margin-bottom: 6px; }
+
+  footer { padding: 44px 0 64px; color: var(--ink-3); font-size: 12.5px; }
+  footer a { color: var(--accent); }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  @media (max-width: 640px) { .readout { margin-left: 0; width: 100%; } }
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="mark" aria-hidden="true">
+      <svg width="15" height="15" viewBox="0 0 17 17" fill="none">
+        <path d="M2 12.5V14M6 7v7M10 9.5V14M14 3v11" stroke="#FFFEFB" stroke-width="2" stroke-linecap="round"/>
+        <path d="M2 9.5 6 4l4 3.5L15 2" stroke="#FFFEFB" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" opacity=".62"/>
+      </svg>
+    </div>
+    <div class="top-name">시세판<span>krx-stock-charts</span></div>
+    <button class="theme-btn" id="themeBtn" type="button">테마 전환</button>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="hero measure">
+    <div class="eyebrow">아키텍처</div>
+    <h1>테이블 세 개를 사이에 둔 두 개의 층</h1>
+    <p class="lede">
+      수집 파이프라인과 웹 대시보드는 서로를 모른다. 둘이 만나는 곳은 <b>Supabase 테이블 세 개</b>뿐이고,
+      그 덕분에 각 층은 상대가 없어도 혼자 완결되게 테스트된다. 이 문서는 그 경계와,
+      경계 때문에 가능해진 네 가지 설계 결정을 그림으로 설명한다.
+    </p>
+  </div>
+
+  <!-- ══════ 1. 계약 ══════ -->
+  <section>
+    <div class="measure">
+      <div class="eyebrow">경계</div>
+      <h2>계약은 API가 아니라 테이블이다</h2>
+      <p>
+        보통 두 층 사이의 계약은 서로 호출하는 API로 쓴다. 여기서는 <strong>DB 스키마</strong>가 계약이다.
+        파이프라인은 <code>ksc_</code> 테이블에 쓰고, 웹은 같은 테이블을 읽는다. 둘은 서로를 호출하지 않고,
+        상대가 살아 있는지도 알 필요가 없다. 접두어를 붙인 건 이 Supabase 프로젝트에 다른 서비스의
+        테이블이 함께 살기 때문이다.
+      </p>
+      <p>
+        이 선택의 값어치는 테스트에서 나온다. 파이프라인은 <strong>가짜 클라이언트</strong>로 pytest를 돌려
+        DB 없이 검증되고, 웹은 <strong>고정 fixture</strong>만으로 Vitest를 돌린다.
+        두 층을 동시에 붙들고 있어야 하는 순간이 없어서, 마일스톤을 한 층씩 닫을 수 있다.
+        게다가 스키마 자체가 검증을 겸한다 — 아래 <code>CHECK</code> 제약이 그것이다.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-body">
+        <svg viewBox="0 0 880 356" role="img" aria-label="수집 층과 표현 층이 Supabase의 ksc_ 접두어 테이블 세 개를 통해서만 연결되고, 파이프라인은 service_role 키로 쓰고 웹은 anon 키로 읽으며, 각 층이 독립적으로 테스트되는 구조도">
+          <defs>
+            <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <!-- 좌: 수집 층 -->
+          <text class="d-t3" x="16" y="20">수집 층 · PYTHON</text>
+          <rect class="d-box2" x="14" y="30" width="228" height="196" rx="10" stroke-width="1"/>
+          <g>
+            <rect class="d-box" x="32" y="48" width="192" height="32" rx="7" stroke-width="1"/>
+            <text class="d-m" x="46" y="68">krx_client.py</text>
+            <text class="d-t3" x="196" y="68" text-anchor="end">pykrx</text>
+
+            <rect class="d-box" x="32" y="88" width="192" height="32" rx="7" stroke-width="1"/>
+            <text class="d-m" x="46" y="108">collect.py</text>
+
+            <rect class="d-hi" x="32" y="128" width="192" height="32" rx="7" stroke-width="1.3"/>
+            <text class="d-m" x="46" y="148">resample.py</text>
+            <text class="d-t3" x="212" y="148" text-anchor="end">일→주/월</text>
+
+            <rect class="d-box" x="32" y="168" width="192" height="32" rx="7" stroke-width="1"/>
+            <text class="d-m" x="46" y="188">validate.py + store.py</text>
+          </g>
+          <g class="d-line" stroke-width="1.3" color="var(--ink-3)">
+            <line x1="128" y1="80" x2="128" y2="86" marker-end="url(#ar)"/>
+            <line x1="128" y1="120" x2="128" y2="126" marker-end="url(#ar)"/>
+            <line x1="128" y1="160" x2="128" y2="166" marker-end="url(#ar)"/>
+          </g>
+
+          <!-- 중앙: 계약 -->
+          <line class="d-dash" x1="300" y1="14" x2="300" y2="300" stroke-width="1.2"/>
+          <line class="d-dash" x1="580" y1="14" x2="580" y2="300" stroke-width="1.2"/>
+          <text class="d-acc" x="440" y="20" text-anchor="middle">계약</text>
+
+          <rect class="d-hi" x="322" y="34" width="236" height="188" rx="10" stroke-width="1.4"/>
+          <text class="d-t" x="440" y="58" text-anchor="middle" font-weight="600">Supabase</text>
+          <g>
+            <rect class="d-box2" x="342" y="72" width="196" height="30" rx="6" stroke-width="1"/>
+            <text class="d-m" x="356" y="91">ksc_tickers</text>
+            <rect class="d-box2" x="342" y="110" width="196" height="30" rx="6" stroke-width="1"/>
+            <text class="d-m" x="356" y="129">ksc_bars</text>
+            <text class="d-t3" x="528" y="129" text-anchor="end">일·주·월</text>
+            <rect class="d-box2" x="342" y="148" width="196" height="30" rx="6" stroke-width="1"/>
+            <text class="d-m" x="356" y="167">ksc_meta</text>
+          </g>
+          <text class="d-t3" x="440" y="200" text-anchor="middle">PK (ticker, timeframe, d) · CHECK 제약</text>
+
+          <!-- 화살표 -->
+          <g stroke-width="1.6" fill="none" color="var(--accent)" stroke="var(--accent)">
+            <line x1="244" y1="128" x2="316" y2="128" marker-end="url(#ar)"/>
+            <line x1="564" y1="128" x2="636" y2="128" marker-end="url(#ar)"/>
+          </g>
+          <text class="d-acc" x="280" y="112" text-anchor="middle">쓰기</text>
+          <text class="d-t3" x="280" y="146" text-anchor="middle">service_role 키</text>
+          <text class="d-t3" x="280" y="160" text-anchor="middle">평일 18:00 cron</text>
+          <text class="d-acc" x="600" y="112" text-anchor="middle">읽기만</text>
+          <text class="d-t3" x="600" y="146" text-anchor="middle">anon 키</text>
+          <text class="d-t3" x="600" y="160" text-anchor="middle">RLS가 쓰기 차단</text>
+
+          <!-- 우: 표현 층 -->
+          <text class="d-t3" x="866" y="20" text-anchor="end">표현 층 · NEXT.JS</text>
+          <rect class="d-box2" x="638" y="30" width="228" height="196" rx="10" stroke-width="1"/>
+          <g>
+            <rect class="d-box" x="656" y="48" width="192" height="32" rx="7" stroke-width="1"/>
+            <text class="d-m" x="670" y="68">load.ts</text>
+            <text class="d-t3" x="836" y="68" text-anchor="end">읽기만</text>
+
+            <rect class="d-box" x="656" y="88" width="192" height="32" rx="7" stroke-width="1"/>
+            <text class="d-m" x="670" y="108">indicators.ts</text>
+            <text class="d-t3" x="836" y="108" text-anchor="end">순수함수</text>
+
+            <rect class="d-box" x="656" y="128" width="192" height="32" rx="7" stroke-width="1"/>
+            <text class="d-m" x="670" y="148">lightweight-charts</text>
+
+            <rect class="d-box" x="656" y="168" width="192" height="32" rx="7" stroke-width="1"/>
+            <text class="d-m" x="670" y="188">page.tsx</text>
+          </g>
+          <g class="d-line" stroke-width="1.3" color="var(--ink-3)">
+            <line x1="752" y1="80" x2="752" y2="86" marker-end="url(#ar)"/>
+            <line x1="752" y1="120" x2="752" y2="126" marker-end="url(#ar)"/>
+            <line x1="752" y1="160" x2="752" y2="166" marker-end="url(#ar)"/>
+          </g>
+
+          <!-- 테스트 경계 -->
+          <line class="d-dash" x1="14" y1="252" x2="866" y2="252" stroke-width="1"/>
+          <rect class="d-box" x="14" y="268" width="228" height="34" rx="8" stroke-width="1"/>
+          <text class="d-t2" x="128" y="290" text-anchor="middle">pytest — 가짜 클라이언트로 DB 없이</text>
+
+          <rect class="d-hi" x="322" y="268" width="236" height="34" rx="8" stroke-width="1.2"/>
+          <text class="d-t2" x="440" y="290" text-anchor="middle">스키마 = 계약이자 2차 검증</text>
+
+          <rect class="d-box" x="638" y="268" width="228" height="34" rx="8" stroke-width="1"/>
+          <text class="d-t2" x="752" y="290" text-anchor="middle">Vitest — 수집 없이 완결</text>
+
+          <text class="d-t3" x="440" y="332" text-anchor="middle">DB가 가격 &gt; 0 · h ≥ max(o,c) · l ≤ min(o,c) 를 강제한다 — 오염된 행은 저장 자체가 거부된다</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>두 층은 <code>ksc_</code> 테이블에서만 만난다.</b> 쓰기 권한은 파이프라인 쪽에만 있다 —
+        웹이 가진 anon 키로는 RLS가 쓰기를 막는다. 경계 아래가 이 구조의 실익으로, 각 층이 상대 없이 테스트된다.
+      </figcaption>
+    </figure>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ══════ 1.5 저장 위치 ══════ -->
+  <section>
+    <div class="measure">
+      <div class="eyebrow">저장 위치</div>
+      <h2>같은 데이터를 매일 커밋하면 무슨 일이 생기나</h2>
+      <p>
+        처음 설계는 JSON을 <strong>리포에 그대로 커밋</strong>하는 쪽이었다. DB도 키도 없이
+        파일만 읽으면 되니 배포가 단순하다. 문제는 갱신 방식에 있었다.
+      </p>
+      <p>
+        JSON은 <strong>한 행만 늘어도 파일 전체가 새 blob</strong>으로 저장된다. 어제 파일과 오늘 파일이
+        99% 같아도 git은 둘 다 통째로 보관한다. 200종목 × 3주기를 매일 커밋하면 압축 후에도
+        하루 약 4MB가 히스토리에 쌓이고, 되돌릴 방법은 히스토리를 다시 쓰는 것뿐이다.
+      </p>
+      <p>
+        DB는 같은 행을 <strong>제자리에서 덮어쓴다</strong>. 어제 값은 남지 않으므로 크기가 늘지 않는다.
+        아래에서 개월 수를 옮겨 두 방식이 갈라지는 지점을 볼 수 있다.
+      </p>
+    </div>
+
+    <figure>
+      <div class="ctl">
+        <span class="ctl-label">경과</span>
+        <input type="range" id="monthRange" min="1" max="24" value="12" step="1"
+               style="flex:1 1 200px; max-width:280px; accent-color:var(--accent);"
+               aria-label="경과 개월 수">
+        <span class="readout"><b id="monthOut">12</b>개월 후</span>
+      </div>
+      <div class="fig-body">
+        <svg id="storeFig" viewBox="0 0 880 250" role="img"
+             aria-label="매일 커밋 방식은 히스토리가 선형으로 누적되어 약 12개월 만에 GitHub 권장 한도 1GB에 닿는 반면, DB는 행을 덮어쓰므로 크기가 일정하게 유지되는 비교 그림"></svg>
+      </div>
+      <figcaption id="storeCap"></figcaption>
+    </figure>
+
+    <div class="measure">
+      <div class="call">
+        <p>
+          <strong>흔한 오해 하나.</strong> GitHub의 100MB 제한은 <strong>파일 하나당</strong> 한도다.
+          우리 파일은 최대 60KB라 여기엔 걸리지 않는다. 걸리는 건 다른 층위 —
+          <strong>리포지토리 전체 권장치 1GB</strong>(5GB 초과 시 경고)이고, 위의 누적이 그 선에 닿는다.
+          두 숫자가 서로 다른 것을 가리킨다.
+        </p>
+      </div>
+      <p>
+        그래서 저장을 Supabase로 옮겼다. 덤으로 얻은 것이 둘 있다 —
+        데이터가 갱신돼도 <strong>웹을 다시 배포할 필요가 없고</strong>(파일이 빌드에 박히지 않으므로),
+        스키마의 <code>CHECK</code> 제약이 검증을 한 겹 더 맡는다.
+      </p>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ══════ 2. 수집 축 ══════ -->
+  <section>
+    <div class="measure">
+      <div class="eyebrow">수집 전략</div>
+      <h2>같은 데이터를 두 방향으로 자른다</h2>
+      <p>
+        수집해야 할 것은 <strong>종목 × 거래일</strong> 격자다. pykrx는 이 격자를 두 방향으로 자를 수 있다 —
+        한 종목의 전 기간을 세로로 긋거나, 하루의 전 종목을 가로로 긋거나. 어느 쪽이 유리한지는
+        <strong>지금 필요한 조각의 모양</strong>에 달렸다.
+      </p>
+      <p>
+        최초 백필은 격자 전체가 필요하다. 세로로 그으면 종목 수만큼(200회), 가로로 그으면 거래일 수만큼(738회)이다.
+        반대로 매일 갱신은 <strong>마지막 열 하나</strong>만 필요하다. 가로로 한 번 그으면 끝나지만,
+        세로로 자르면 200개 종목을 하나씩 다시 물어야 한다.
+      </p>
+    </div>
+
+    <figure>
+      <div class="ctl">
+        <span class="ctl-label">자르는 방향</span>
+        <div class="segmented" role="group" aria-label="수집 방향">
+          <button class="seg" type="button" data-axis="ticker" aria-pressed="true">종목축 (세로)</button>
+          <button class="seg" type="button" data-axis="date" aria-pressed="false">날짜축 (가로)</button>
+        </div>
+        <span class="ctl-label" style="margin-left:6px">목표</span>
+        <div class="segmented" role="group" aria-label="수집 목표">
+          <button class="seg" type="button" data-goal="backfill" aria-pressed="true">최초 백필</button>
+          <button class="seg" type="button" data-goal="daily" aria-pressed="false">매일 갱신</button>
+        </div>
+        <span class="readout">필요 요청 수 <b id="reqCount">200</b>회</span>
+      </div>
+      <div class="fig-body">
+        <svg id="gridFig" viewBox="0 0 880 300" role="img" aria-label="종목과 거래일로 이루어진 격자를 세로 또는 가로로 잘라 수집할 때 필요한 요청 수를 비교하는 그림"></svg>
+      </div>
+      <figcaption id="gridCap"><b>세로로 자르면 백필이 싸다.</b> 격자 전체를 종목 단위로 훑으므로 요청은 종목 수만큼만 발생한다.</figcaption>
+    </figure>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th scope="col">목표</th><th scope="col">필요한 조각</th><th scope="col" style="text-align:right">종목축 (세로)</th><th scope="col" style="text-align:right">날짜축 (가로)</th><th scope="col">채택</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>최초 백필</td><td>격자 전체</td><td class="n win">200회</td><td class="n lose">738회</td><td>종목축</td></tr>
+          <tr><td>매일 갱신</td><td>마지막 열 1개</td><td class="n lose">200회</td><td class="n win">1회</td><td>날짜축</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="measure">
+      <div class="call">
+        <p>
+          <strong>그래서 두 경로를 모두 구현한다.</strong> <code>--backfill</code>은 종목축으로,
+          <code>--update</code>는 날짜축으로 격자를 자른다. 하나의 수집 함수를 재사용하려다
+          매일 200회씩 KRX를 두드리는 쪽이 훨씬 비싼 실수다.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ══════ 3. 리샘플 ══════ -->
+  <section>
+    <div class="measure">
+      <div class="eyebrow">저장 범위</div>
+      <h2>한 번 수집하고 세 번 저장한다</h2>
+      <p>
+        주봉과 월봉은 일봉에서 계산으로 나오는 값이다. 그 계산을 <strong>어디서 할 것인가</strong>가
+        갈림길이었다 — 화면에서 매번 접거나, 파이프라인에서 미리 접어 저장하거나.
+        <strong>파이프라인 사전 계산</strong>을 택했다.
+      </p>
+      <p>
+        저장 행 수는 약 26% 늘지만(종목당 일 738 + 주 157 + 월 37행), 파생 로직이 <strong>Python 한 곳에만</strong> 존재하게 된다.
+        화면에서 접는 쪽을 택했다면 같은 규칙이 Python과 TypeScript 두 벌로 존재하고,
+        둘이 어긋나는지 대조하는 테스트를 계속 유지해야 했다. 화면은 테이블을 읽어 그리기만 한다.
+      </p>
+      <p>
+        묶는 규칙은 네 가지뿐이다 — 시가는 구간 <strong>첫 봉의 시가</strong>, 종가는 <strong>마지막 봉의 종가</strong>,
+        고가·저가는 구간 <strong>전체의 최고·최저</strong>, 거래량은 <strong>합계</strong>다.
+        아래에서 주기를 바꾸면 파이프라인이 무엇을 저장하는지 볼 수 있다.
+      </p>
+    </div>
+
+    <figure>
+      <div class="ctl">
+        <span class="ctl-label">파생 주기</span>
+        <div class="segmented" role="group" aria-label="파생 주기">
+          <button class="seg" type="button" data-tf="D" aria-pressed="false">일봉</button>
+          <button class="seg" type="button" data-tf="W" aria-pressed="true">주봉</button>
+          <button class="seg" type="button" data-tf="M" aria-pressed="false">월봉</button>
+        </div>
+        <span class="readout">일봉 <b id="rsIn">10</b>개 → <span id="rsTfName">주봉</span> <b id="rsOut">2</b>개</span>
+      </div>
+      <div class="fig-body">
+        <svg id="rsFig" viewBox="0 0 880 300" role="img" aria-label="일봉이 주봉 또는 월봉으로 묶이는 과정과 시가·고가·저가·종가·거래량 계산 규칙을 보여주는 그림"></svg>
+      </div>
+      <figcaption id="rsCap"></figcaption>
+    </figure>
+
+    <div class="measure">
+      <div class="call">
+        <p>
+          <strong>대신 갱신이 단순한 append가 아니게 된다.</strong> 진행 중인 주와 달의 봉은 매일 값이 바뀐다.
+          금요일에 확정될 주봉이 수요일에는 아직 수요일까지만 반영된 값이므로, 증분 갱신은 일봉을 덧붙인 뒤
+          <strong>해당 종목의 마지막 주봉·월봉을 다시 계산해 덮어써야</strong> 한다. 이걸 빠뜨리면
+          마지막 주/월봉이 낡은 값으로 굳는다.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ══════ 4. 워밍업 ══════ -->
+  <section>
+    <div class="measure">
+      <div class="eyebrow">조회 규칙</div>
+      <h2>보이는 만큼만 읽으면 선이 잘린다</h2>
+      <p>
+        1년치 차트를 그린다고 1년치만 읽으면, 이동평균선의 앞부분이 비어버린다.
+        20일 이동평균은 <strong>앞선 20개 봉이 있어야</strong> 첫 값이 나오기 때문이다.
+        표시 구간의 첫 봉에서부터 선이 그려지려면, 그 앞에 <strong>최장 MA 주기만큼</strong>을 더 읽어야 한다.
+      </p>
+      <p>
+        시안을 만들며 실제로 부딪힌 문제라서, 이걸 화면 구현의 세부가 아니라
+        <strong>조회 계약</strong>으로 못박았다 — <code>slice(-(표시개수 + 최장주기))</code>로 읽고,
+        계산이 끝난 뒤 앞의 워밍업 구간을 잘라낸다.
+      </p>
+    </div>
+
+    <figure>
+      <div class="ctl">
+        <span class="ctl-label">읽는 범위</span>
+        <div class="segmented" role="group" aria-label="읽는 범위">
+          <button class="seg" type="button" data-warm="off" aria-pressed="true">표시 구간만</button>
+          <button class="seg" type="button" data-warm="on" aria-pressed="false">워밍업 포함</button>
+        </div>
+        <span class="readout" id="warmRead"></span>
+      </div>
+      <div class="fig-body">
+        <svg id="warmFig" viewBox="0 0 880 250" role="img" aria-label="표시 구간만 읽었을 때 이동평균선 앞부분이 비고, 워밍업 구간을 포함해 읽으면 첫 봉부터 선이 그려지는 비교 그림"></svg>
+      </div>
+      <figcaption id="warmCap"></figcaption>
+    </figure>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ══════ 5. 갱신 안전성 ══════ -->
+  <section>
+    <div class="measure">
+      <div class="eyebrow">갱신 경로</div>
+      <h2>매일 덮어쓰는 대신, 매일 확인한다</h2>
+      <p>
+        자동 갱신에서 무서운 것은 실패가 아니라 <strong>조용한 오염</strong>이다.
+        pykrx는 KRX 웹을 긁어오므로 사이트가 바뀌면 빈 값이나 이상한 값이 올 수 있고,
+        액면분할이 일어나면 <strong>이미 저장한 과거 수정주가까지 소급해서 바뀐다</strong>.
+      </p>
+      <p>
+        그래서 갱신은 단순 append가 아니다. 당일 봉을 받은 뒤 <strong>최근 20거래일 종가를 저장분과 대조</strong>해서,
+        어긋나면 그 종목만 통째로 다시 받는다. 검증에 실패하면 아무것도 쓰지 않고 기존 데이터를 유지한 채 실패를 알린다.
+        서비스는 리포에 있는 데이터로 계속 동작한다.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-body">
+        <svg viewBox="0 0 880 268" role="img" aria-label="매일 갱신 흐름도. 당일 봉 수집 후 최근 20거래일 종가를 대조해 일치하면 병합, 불일치하면 종목 전체를 재백필하고, 검증 실패 시 기존 데이터를 유지하는 경로">
+          <defs>
+            <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <rect class="d-box" x="14" y="60" width="132" height="46" rx="9" stroke-width="1"/>
+          <text class="d-t2" x="80" y="80" text-anchor="middle">cron 18:00</text>
+          <text class="d-t3" x="80" y="96" text-anchor="middle">평일</text>
+
+          <rect class="d-box" x="180" y="60" width="146" height="46" rx="9" stroke-width="1"/>
+          <text class="d-t2" x="253" y="80" text-anchor="middle">당일 봉 수집</text>
+          <text class="d-t3" x="253" y="96" text-anchor="middle">날짜축 · 1회 요청</text>
+
+          <!-- 대조 마름모 -->
+          <path class="d-hi" d="M446 46 L536 83 L446 120 L356 83 Z" stroke-width="1.4"/>
+          <text class="d-t2" x="446" y="79" text-anchor="middle">최근 20거래일</text>
+          <text class="d-t2" x="446" y="95" text-anchor="middle">종가 대조</text>
+
+          <rect class="d-box" x="580" y="26" width="146" height="44" rx="9" stroke-width="1"/>
+          <text class="d-t2" x="653" y="53" text-anchor="middle">upsert (멱등)</text>
+
+          <rect class="d-box" x="580" y="96" width="146" height="44" rx="9" stroke-width="1"/>
+          <text class="d-t2" x="653" y="117" text-anchor="middle">종목 전체 재백필</text>
+          <text class="d-t3" x="653" y="132" text-anchor="middle">수정주가 소급 변경</text>
+
+          <rect class="d-box2" x="762" y="60" width="104" height="46" rx="9" stroke-width="1"/>
+          <text class="d-t2" x="814" y="80" text-anchor="middle">검증</text>
+          <text class="d-t3" x="814" y="96" text-anchor="middle">validate.py</text>
+
+          <!-- 실패 경로 -->
+          <rect class="d-box" x="580" y="196" width="286" height="46" rx="9" stroke-width="1" stroke-dasharray="4 3"/>
+          <text class="d-t2" x="723" y="216" text-anchor="middle">쓰기 자체를 하지 않음 · 실패 알림</text>
+          <text class="d-t3" x="723" y="232" text-anchor="middle">Supabase의 기존 데이터로 서비스는 계속 동작</text>
+
+          <g stroke-width="1.5" fill="none" color="var(--ink-3)" stroke="var(--ink-3)">
+            <line x1="148" y1="83" x2="174" y2="83" marker-end="url(#ar2)"/>
+            <line x1="328" y1="83" x2="352" y2="83" marker-end="url(#ar2)"/>
+            <path d="M446 46 L446 30 L574 30" marker-end="url(#ar2)"/>
+            <path d="M536 83 L556 83 L556 118 L574 118" marker-end="url(#ar2)"/>
+            <path d="M726 48 L744 48 L744 78 L756 78" marker-end="url(#ar2)"/>
+            <path d="M726 118 L744 118 L744 90 L756 90" marker-end="url(#ar2)"/>
+          </g>
+          <g stroke-width="1.5" fill="none" color="var(--accent)" stroke="var(--accent)" stroke-dasharray="4 3">
+            <path d="M814 108 L814 219 L872 219 M814 108 L814 219 L580 219" marker-end="url(#ar2)"/>
+          </g>
+
+          <text class="d-t3" x="470" y="24" text-anchor="start">일치</text>
+          <text class="d-t3" x="546" y="110" text-anchor="start">불일치</text>
+          <text class="d-acc" x="826" y="150" text-anchor="start">실패</text>
+          <text class="d-t3" x="14" y="170">PK (ticker, timeframe, d) 덕에 멱등이다 — 같은 봉을 두 번 써도 행이 늘지 않고 최신값이 덮어쓴다.</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>갱신은 append가 아니라 대조다.</b> 액면분할로 과거 수정주가가 소급 변경되면 대조가 어긋나고,
+        해당 종목만 재백필된다. 검증 실패 시 쓰기 자체가 일어나지 않는다.
+      </figcaption>
+    </figure>
+  </section>
+
+  <hr class="divider">
+
+  <!-- ══════ 6. 마일스톤 ══════ -->
+  <section>
+    <div class="measure">
+      <div class="eyebrow">진행 순서</div>
+      <h2>마일스톤이 층을 따라 흐른다</h2>
+      <p>
+        경계가 분명하니 일의 순서도 단순해진다. M0~M2로 수집 층을 닫고, M3~M4로 표현 층을 닫는다.
+        <strong>M2가 끝나는 시점에 실데이터가 생기므로</strong>, M3부터는 시안의 샘플 데이터가 아니라
+        진짜 시세로 작업한다.
+      </p>
+    </div>
+
+    <figure>
+      <div class="fig-body">
+        <svg viewBox="0 0 880 206" role="img" aria-label="M0부터 M5까지의 마일스톤이 수집 층과 표현 층 중 어느 쪽에 속하는지, 실데이터가 확보되는 시점이 M2 종료임을 보여주는 타임라인">
+          <defs>
+            <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+
+          <text class="d-t3" x="14" y="34">수집 층</text>
+          <text class="d-t3" x="14" y="112">표현 층</text>
+          <text class="d-t3" x="14" y="176">마감</text>
+
+          <g>
+            <rect class="d-box" x="90" y="16" width="150" height="42" rx="9" stroke-width="1"/>
+            <text class="d-t" x="104" y="35" font-weight="600">M0</text>
+            <text class="d-t2" x="140" y="35">스캐폴드</text>
+            <text class="d-t3" x="104" y="50">종목 유니버스</text>
+
+            <rect class="d-box" x="252" y="16" width="150" height="42" rx="9" stroke-width="1"/>
+            <text class="d-t" x="266" y="35" font-weight="600">M1</text>
+            <text class="d-t2" x="302" y="35">3년 백필</text>
+            <text class="d-t3" x="266" y="50">종목축 · 리샘플</text>
+
+            <rect class="d-box" x="414" y="16" width="150" height="42" rx="9" stroke-width="1"/>
+            <text class="d-t" x="428" y="35" font-weight="600">M2</text>
+            <text class="d-t2" x="464" y="35">증분 갱신</text>
+            <text class="d-t3" x="428" y="50">날짜축 · cron</text>
+          </g>
+
+          <!-- 실데이터 확보 지점 -->
+          <line class="d-dash" x1="576" y1="10" x2="576" y2="150" stroke-width="1.4" stroke="var(--accent)"/>
+          <text class="d-acc" x="584" y="80">실데이터 확보</text>
+          <text class="d-t3" x="584" y="95">이후 샘플 데이터 불필요</text>
+
+          <g>
+            <rect class="d-box" x="252" y="94" width="150" height="42" rx="9" stroke-width="1"/>
+            <text class="d-t" x="266" y="113" font-weight="600">M3</text>
+            <text class="d-t2" x="302" y="113">프론트 기반</text>
+            <text class="d-t3" x="266" y="128">로더 · 지표</text>
+
+            <rect class="d-box" x="414" y="94" width="150" height="42" rx="9" stroke-width="1"/>
+            <text class="d-t" x="428" y="113" font-weight="600">M4</text>
+            <text class="d-t2" x="464" y="113">차트</text>
+            <text class="d-t3" x="428" y="128">lightweight-charts</text>
+          </g>
+
+          <rect class="d-hi" x="690" y="156" width="176" height="40" rx="9" stroke-width="1.3"/>
+          <text class="d-t" x="704" y="174" font-weight="600">M5</text>
+          <text class="d-t2" x="740" y="174">배포</text>
+          <text class="d-t3" x="704" y="188">보안 점검 4단계 선행</text>
+
+          <g stroke-width="1.4" fill="none" color="var(--ink-3)" stroke="var(--ink-3)">
+            <line x1="242" y1="37" x2="248" y2="37" marker-end="url(#ar3)"/>
+            <line x1="404" y1="37" x2="410" y2="37" marker-end="url(#ar3)"/>
+            <line x1="404" y1="115" x2="410" y2="115" marker-end="url(#ar3)"/>
+            <path d="M180 58 L180 115 L248 115" marker-end="url(#ar3)"/>
+            <path d="M564 115 L640 115 L640 176 L684 176" marker-end="url(#ar3)"/>
+          </g>
+          <text class="d-t3" x="90" y="88">M3는 M0 이후 언제든 착수 가능</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>M3는 M2를 기다리지 않아도 된다.</b> fixture만 있으면 표현 층의 순수 함수는 먼저 작성할 수 있고,
+        실데이터는 M2가 끝나는 대로 그 자리에 갈아끼우면 된다.
+      </figcaption>
+    </figure>
+  </section>
+
+  <footer class="measure">
+    <hr class="divider" style="margin-bottom:28px">
+    <p style="margin:0">
+      krx-stock-charts · 문서 근거는 <code>docs/SPEC.md</code> · <code>docs/PLAN.md</code> · <code>docs/DESIGN.md</code>에 있다.
+      이 페이지의 숫자(종목 200 · 거래일 738)는 KOSPI200 3년 기준 추정치다.
+    </p>
+  </footer>
+</div>
+
+<script>
+var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ═══ 테마 ═══ */
+document.getElementById("themeBtn").addEventListener("click", function () {
+  var cur = document.documentElement.getAttribute("data-theme");
+  var dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.setAttribute("data-theme", dark ? "light" : "dark");
+});
+
+/* ═══ 공통 ═══ */
+function bindSeg(attr, fn) {
+  var btns = Array.prototype.slice.call(document.querySelectorAll("[" + attr + "]"));
+  btns.forEach(function (b) {
+    b.addEventListener("click", function () {
+      btns.forEach(function (o) { o.setAttribute("aria-pressed", String(o === b)); });
+      fn(b.getAttribute(attr));
+    });
+  });
+}
+function el(tag, attrs, text) {
+  var n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (var k in attrs) n.setAttribute(k, attrs[k]);
+  if (text != null) n.textContent = text;
+  return n;
+}
+
+/* ═══════════ 1. 수집 축 격자 ═══════════ */
+var GRID = { cols: 22, rows: 9, x: 132, y: 44, cw: 30, ch: 20 };
+var gState = { axis: "ticker", goal: "backfill", step: 0 };
+var gTimer = null;
+
+function drawGrid() {
+  var svg = document.getElementById("gridFig");
+  svg.textContent = "";
+  var g = GRID;
+  var W = g.x + g.cols * g.cw;
+
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: 26 }, "종목 200 × 거래일 738 격자 (일부만 표시)"));
+
+  // 축 라벨
+  svg.appendChild(el("text", { class: "d-t2", x: 14, y: g.y + 4 * g.ch + 4 }, "종목"));
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: g.y + 4 * g.ch + 20 }, "200개"));
+  svg.appendChild(el("text", { class: "d-t2", x: g.x + (g.cols * g.cw) / 2, y: g.y + g.rows * g.ch + 30, "text-anchor": "middle" }, "거래일 →  738일"));
+
+  var lit = gState.axis === "ticker" ? gState.step % g.rows : gState.step % g.cols;
+
+  for (var r = 0; r < g.rows; r++) {
+    for (var c = 0; c < g.cols; c++) {
+      var on = gState.axis === "ticker" ? r === lit : c === lit;
+      // 매일 갱신 목표에서는 마지막 열만 실제 필요
+      var needed = gState.goal === "backfill" ? true : c === g.cols - 1;
+      var fill = on ? "var(--accent)" : (needed ? "var(--grid-off)" : "var(--rule-2)");
+      svg.appendChild(el("rect", {
+        x: g.x + c * g.cw + 1.5, y: g.y + r * g.ch + 1.5,
+        width: g.cw - 3, height: g.ch - 3, rx: 2.5,
+        fill: fill, opacity: on ? 1 : (needed ? 0.85 : 0.4)
+      }));
+    }
+  }
+
+  // 필요 영역 테두리
+  if (gState.goal === "daily") {
+    svg.appendChild(el("rect", {
+      x: g.x + (g.cols - 1) * g.cw - 1, y: g.y - 3,
+      width: g.cw + 2, height: g.rows * g.ch + 6, rx: 4,
+      fill: "none", stroke: "var(--ink-3)", "stroke-width": 1.2, "stroke-dasharray": "4 3"
+    }));
+    svg.appendChild(el("text", { class: "d-t3", x: W - 4, y: g.y - 10, "text-anchor": "end" }, "필요한 조각 = 오늘 열"));
+  } else {
+    svg.appendChild(el("text", { class: "d-t3", x: W - 4, y: g.y - 10, "text-anchor": "end" }, "필요한 조각 = 격자 전체"));
+  }
+
+  // 한 번의 요청이 덮는 범위 설명
+  var sweepY = g.y + g.rows * g.ch + 54;
+  var label = gState.axis === "ticker"
+    ? "1회 요청 = 한 종목의 전 기간 (가로 한 줄)"
+    : "1회 요청 = 하루의 전 종목 (세로 한 줄)";
+  svg.appendChild(el("rect", { x: g.x, y: sweepY - 15, width: 258, height: 22, rx: 5, fill: "var(--accent-w)", stroke: "var(--accent)", "stroke-width": 1 }));
+  svg.appendChild(el("text", { class: "d-acc", x: g.x + 10, y: sweepY }, label));
+
+  var code = gState.axis === "ticker"
+    ? "get_market_ohlcv(from, to, ticker)"
+    : "get_market_ohlcv(date)";
+  svg.appendChild(el("text", { class: "d-m", x: g.x + 272, y: sweepY }, code));
+
+  // 요청 수
+  var n = gState.goal === "backfill"
+    ? (gState.axis === "ticker" ? 200 : 738)
+    : (gState.axis === "ticker" ? 200 : 1);
+  document.getElementById("reqCount").textContent = n.toLocaleString("ko-KR");
+
+  var good = (gState.goal === "backfill" && gState.axis === "ticker") || (gState.goal === "daily" && gState.axis === "date");
+  document.getElementById("gridCap").innerHTML = good
+    ? "<b>이 조합이 채택안이다.</b> " + (gState.goal === "backfill"
+        ? "격자 전체를 종목 단위로 훑으므로 요청은 종목 수(200회)만큼만 발생한다."
+        : "필요한 것은 오늘 열 하나뿐이라, 날짜축으로 한 번만 요청하면 200종목이 모두 채워진다.")
+    : "<b>이 조합은 낭비다.</b> " + (gState.goal === "backfill"
+        ? "거래일마다 요청하면 738회가 필요하다 — 같은 격자를 종목축으로 자르면 200회로 끝난다."
+        : "오늘 열 하나를 얻으려고 종목 200개를 하나씩 물어본다 — 날짜축이면 1회다.");
+}
+
+function startSweep() {
+  if (gTimer) clearInterval(gTimer);
+  if (reduced) { drawGrid(); return; }
+  gTimer = setInterval(function () { gState.step++; drawGrid(); }, 620);
+}
+bindSeg("data-axis", function (v) { gState.axis = v; gState.step = 0; drawGrid(); startSweep(); });
+bindSeg("data-goal", function (v) { gState.goal = v; gState.step = 0; drawGrid(); startSweep(); });
+drawGrid(); startSweep();
+
+/* ═══════════ 1.5 저장 위치 비교 ═══════════ */
+var SNAP_MB = 4.0;        // 매일 커밋 시 하루에 쌓이는 압축 blob (추정)
+var TRADING_PER_MONTH = 21;
+var DB_MB = 40;           // Supabase 예상 크기 (약 186,400행)
+var LIMIT_MB = 1024;      // GitHub 리포 권장 한도
+
+function drawStore() {
+  var svg = document.getElementById("storeFig");
+  svg.textContent = "";
+  var months = +document.getElementById("monthRange").value;
+  document.getElementById("monthOut").textContent = months;
+
+  var X0 = 96, W = 720, TOP = 40, H = 132;
+  var maxMB = Math.max(LIMIT_MB * 1.12, SNAP_MB * TRADING_PER_MONTH * months * 1.08);
+  function Y(mb) { return TOP + H - (mb / maxMB) * H; }
+  function X(m) { return X0 + (m / 24) * W; }
+
+  // 권장 한도선
+  svg.appendChild(el("line", { x1: X0, x2: X0 + W, y1: Y(LIMIT_MB), y2: Y(LIMIT_MB),
+    stroke: "var(--up)", "stroke-width": 1.4, "stroke-dasharray": "5 4" }));
+  svg.appendChild(el("text", { x: X0 + W, y: Y(LIMIT_MB) - 7, "text-anchor": "end",
+    fill: "var(--up)", "font-size": "11px", "font-family": "var(--sans)", "font-weight": "600" },
+    "GitHub 리포 권장 한도 1GB"));
+
+  // 매일 커밋 — 누적 곡선
+  var gitPts = [], gitMB = 0;
+  for (var m = 0; m <= months; m++) {
+    gitMB = SNAP_MB * TRADING_PER_MONTH * m;
+    gitPts.push(X(m).toFixed(1) + "," + Y(gitMB).toFixed(1));
+  }
+  svg.appendChild(el("polyline", { points: gitPts.join(" "), fill: "none",
+    stroke: "var(--up)", "stroke-width": 2.4, "stroke-linejoin": "round" }));
+  svg.appendChild(el("circle", { cx: X(months), cy: Y(gitMB), r: 4.5, fill: "var(--up)" }));
+
+  // DB — 평평
+  svg.appendChild(el("line", { x1: X0, x2: X(months), y1: Y(DB_MB), y2: Y(DB_MB),
+    stroke: "var(--accent)", "stroke-width": 2.4 }));
+  svg.appendChild(el("circle", { cx: X(months), cy: Y(DB_MB), r: 4.5, fill: "var(--accent)" }));
+
+  // 축
+  svg.appendChild(el("line", { x1: X0, x2: X0 + W, y1: TOP + H, y2: TOP + H,
+    stroke: "var(--rule)", "stroke-width": 1 }));
+  for (var t = 0; t <= 24; t += 6) {
+    svg.appendChild(el("text", { class: "d-t3", x: X(t), y: TOP + H + 16, "text-anchor": "middle" },
+      t + "개월"));
+  }
+
+  // 라벨
+  svg.appendChild(el("text", { x: 14, y: TOP + 6, fill: "var(--up)", "font-size": "11.5px",
+    "font-family": "var(--sans)", "font-weight": "600" }, "매일 커밋"));
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: TOP + 21 }, "JSON 전체가"));
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: TOP + 34 }, "새 blob"));
+
+  svg.appendChild(el("text", { x: 14, y: Y(DB_MB) - 4, fill: "var(--accent)", "font-size": "11.5px",
+    "font-family": "var(--sans)", "font-weight": "600" }, "Supabase"));
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: Y(DB_MB) + 11 }, "행을 덮어씀"));
+
+  // 현재 값
+  var gitTxt = gitMB >= 1024 ? (gitMB / 1024).toFixed(2) + " GB" : Math.round(gitMB) + " MB";
+  svg.appendChild(el("text", { x: X0, y: TOP + H + 46, fill: "var(--up)", "font-size": "13px",
+    "font-family": "var(--mono)", "font-weight": "650" }, "매일 커밋  " + gitTxt));
+  svg.appendChild(el("text", { x: X0 + 210, y: TOP + H + 46, fill: "var(--accent)", "font-size": "13px",
+    "font-family": "var(--mono)", "font-weight": "650" }, "Supabase  " + DB_MB + " MB"));
+  svg.appendChild(el("text", { class: "d-t3", x: X0 + 400, y: TOP + H + 46 },
+    "차이 " + Math.round(gitMB / DB_MB) + "배"));
+
+  var over = gitMB >= LIMIT_MB;
+  document.getElementById("storeCap").innerHTML = over
+    ? "<b>" + months + "개월이면 권장 한도를 넘는다.</b> 히스토리는 지워야만 줄어들고, 지우려면 히스토리를 다시 써야 한다 — 되돌리기 어려운 종류의 비용이다."
+    : "<b>" + months + "개월 시점에 " + gitTxt + " 대 " + DB_MB + "MB.</b> 매일 커밋 쪽은 선형으로 계속 오르지만, DB는 행을 덮어쓰므로 이 선이 평평하게 유지된다.";
+}
+document.getElementById("monthRange").addEventListener("input", drawStore);
+drawStore();
+
+/* ═══════════ 2. 리샘플 ═══════════ */
+/* 고정 샘플 일봉 10개 (설명용 · 실제 시세 아님) */
+var DAILY = [
+  { d: "08-03", o: 71200, h: 72400, l: 70900, c: 72100, v: 1120 },
+  { d: "08-04", o: 72200, h: 73600, l: 71800, c: 73400, v: 1480 },
+  { d: "08-05", o: 73300, h: 73900, l: 71600, c: 71900, v: 1760 },
+  { d: "08-06", o: 71800, h: 72800, l: 71200, c: 72600, v: 1030 },
+  { d: "08-07", o: 72700, h: 74200, l: 72500, c: 74000, v: 1390 },
+  { d: "08-10", o: 74100, h: 74800, l: 73200, c: 73500, v: 1240 },
+  { d: "08-11", o: 73400, h: 73700, l: 71400, c: 71700, v: 1910 },
+  { d: "08-12", o: 71600, h: 72300, l: 70800, c: 71000, v: 1580 },
+  { d: "08-13", o: 71100, h: 72900, l: 70600, c: 72700, v: 1350 },
+  { d: "08-14", o: 72800, h: 75100, l: 72600, c: 74900, v: 2040 }
+];
+var TF_SIZE = { D: 1, W: 5, M: 10 };
+var TF_NAME = { D: "일봉", W: "주봉", M: "월봉" };
+var rsTf = "W";
+
+function fold(rows) {
+  return {
+    o: rows[0].o,
+    h: Math.max.apply(null, rows.map(function (r) { return r.h; })),
+    l: Math.min.apply(null, rows.map(function (r) { return r.l; })),
+    c: rows[rows.length - 1].c,
+    v: rows.reduce(function (a, r) { return a + r.v; }, 0),
+    from: rows[0].d, to: rows[rows.length - 1].d
+  };
+}
+function drawResample() {
+  var svg = document.getElementById("rsFig");
+  svg.textContent = "";
+  var size = TF_SIZE[rsTf];
+  var groups = [];
+  for (var i = 0; i < DAILY.length; i += size) groups.push(DAILY.slice(i, i + size));
+
+  var lo = Math.min.apply(null, DAILY.map(function (r) { return r.l; })) - 500;
+  var hi = Math.max.apply(null, DAILY.map(function (r) { return r.h; })) + 500;
+  var TOP = 34, PH = 86;
+  function Y(p, top) { return top + (hi - p) / (hi - lo) * PH; }
+
+  var X0 = 74, CW = 62;
+
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: 20 }, "수집한 일봉 · ksc_bars (timeframe=daily)"));
+
+  // 상단: 일봉
+  DAILY.forEach(function (r, i) {
+    var x = X0 + i * CW + CW / 2;
+    var up = r.c >= r.o, col = up ? "var(--up)" : "var(--down)";
+    svg.appendChild(el("line", { x1: x, x2: x, y1: Y(r.h, TOP), y2: Y(r.l, TOP), stroke: col, "stroke-width": 1.2 }));
+    var yt = Y(Math.max(r.o, r.c), TOP), yb = Y(Math.min(r.o, r.c), TOP);
+    svg.appendChild(el("rect", { x: x - 7, y: yt, width: 14, height: Math.max(1.5, yb - yt), rx: 1.5, fill: col }));
+    svg.appendChild(el("text", { class: "d-t3", x: x, y: TOP + PH + 16, "text-anchor": "middle" }, r.d));
+  });
+
+  // 그룹 브래킷 + 파생 봉
+  var BOT = 196;
+  groups.forEach(function (grp, gi) {
+    var i0 = gi * size, i1 = i0 + grp.length - 1;
+    var xL = X0 + i0 * CW + 6, xR = X0 + i1 * CW + CW - 6;
+    var xm = (xL + xR) / 2;
+    var by = TOP + PH + 26;
+
+    // 브래킷
+    svg.appendChild(el("path", {
+      d: "M" + xL + " " + by + " L" + xL + " " + (by + 7) + " L" + xR + " " + (by + 7) + " L" + xR + " " + by,
+      fill: "none", stroke: "var(--accent)", "stroke-width": 1.3
+    }));
+    svg.appendChild(el("line", { x1: xm, y1: by + 7, x2: xm, y2: by + 20, stroke: "var(--accent)", "stroke-width": 1.3 }));
+
+    var f = fold(grp);
+    var up = f.c >= f.o, col = up ? "var(--up)" : "var(--down)";
+    var top2 = by + 26;
+    function Y2(p) { return top2 + (hi - p) / (hi - lo) * 62; }
+    svg.appendChild(el("line", { x1: xm, x2: xm, y1: Y2(f.h), y2: Y2(f.l), stroke: col, "stroke-width": 1.4 }));
+    var yt2 = Y2(Math.max(f.o, f.c)), yb2 = Y2(Math.min(f.o, f.c));
+    svg.appendChild(el("rect", { x: xm - 11, y: yt2, width: 22, height: Math.max(2, yb2 - yt2), rx: 2, fill: col }));
+    svg.appendChild(el("text", { class: "d-t3", x: xm, y: top2 + 76, "text-anchor": "middle" },
+      grp.length === 1 ? f.to : f.from + "~" + f.to));
+    svg.appendChild(el("text", { class: "d-m", x: xm, y: top2 + 90, "text-anchor": "middle" }, "거래량 " + f.v.toLocaleString("ko-KR")));
+  });
+
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: TOP + PH + 52 }, "저장되는"));
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: TOP + PH + 66 }, TF_NAME[rsTf]));
+
+  // 규칙 라벨
+  var rules = ["시가 = 첫 봉 시가", "고가 = 구간 최고", "저가 = 구간 최저", "종가 = 마지막 봉 종가", "거래량 = 합계"];
+  rules.forEach(function (t, i) {
+    var x = 14 + i * 172;
+    svg.appendChild(el("text", { class: "d-t3", x: x, y: 292 }, "· " + t));
+  });
+
+  document.getElementById("rsIn").textContent = DAILY.length;
+  document.getElementById("rsOut").textContent = groups.length;
+  document.getElementById("rsTfName").textContent = TF_NAME[rsTf];
+  document.getElementById("rsCap").innerHTML = rsTf === "D"
+    ? "<b>일봉은 파생이 없다.</b> 수집한 값이 그대로 저장되고 화면에 간다."
+    : "<b>같은 일봉 " + DAILY.length + "개가 " + TF_NAME[rsTf] + " " + groups.length + "개로 접힌다.</b> " +
+      "파이프라인이 이 계산을 미리 끝내 ksc_bars에 timeframe으로 구분해 넣으므로, 화면은 읽어서 그리기만 한다.";
+}
+bindSeg("data-tf", function (v) { rsTf = v; drawResample(); });
+drawResample();
+
+/* ═══════════ 3. MA 워밍업 ═══════════ */
+var warmOn = false;
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    var t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+var WSERIES = (function () {
+  var rnd = mulberry32(7), p = 100, out = [];
+  for (var i = 0; i < 56; i++) { p *= Math.exp((rnd() - 0.48) * 0.032); out.push(p); }
+  return out;
+})();
+var MA_P = 12, SHOW = 36; // 표시 36봉, MA 12
+function drawWarm() {
+  var svg = document.getElementById("warmFig");
+  svg.textContent = "";
+  var X0 = 96, W = 740, PH = 120, TOP = 46;
+  var start = WSERIES.length - SHOW;          // 표시 시작 인덱스
+  var readFrom = warmOn ? start - MA_P : start;
+  var vis = WSERIES.slice(start);
+  var lo = Math.min.apply(null, vis) * 0.985, hi = Math.max.apply(null, vis) * 1.015;
+  var cw = W / SHOW;
+  function X(i) { return X0 + (i + 0.5) * cw; }   // i = 표시 구간 내 인덱스
+  function Y(p) { return TOP + (hi - p) / (hi - lo) * PH; }
+
+  // 워밍업 구간 표시 (표시 구간 왼쪽 바깥)
+  if (warmOn) {
+    svg.appendChild(el("rect", { x: X0 - MA_P * cw, y: TOP - 12, width: MA_P * cw, height: PH + 24, rx: 6, fill: "var(--accent-w)", stroke: "var(--accent)", "stroke-width": 1, "stroke-dasharray": "4 3" }));
+    svg.appendChild(el("text", { class: "d-acc", x: X0 - (MA_P * cw) / 2, y: TOP - 20, "text-anchor": "middle" }, "워밍업 " + MA_P + "봉"));
+    svg.appendChild(el("text", { class: "d-t3", x: X0 - (MA_P * cw) / 2, y: TOP + PH + 34, "text-anchor": "middle" }, "읽되 그리지 않음"));
+    // 워밍업 구간의 봉(옅게)
+    for (var w = 0; w < MA_P; w++) {
+      var pw = WSERIES[start - MA_P + w];
+      svg.appendChild(el("rect", { x: X0 - (MA_P - w) * cw + cw * 0.28, y: Y(pw), width: cw * 0.44, height: Math.max(1.5, Y(lo) - Y(pw)), rx: 1.5, fill: "var(--ink-3)", opacity: 0.3 }));
+    }
+  }
+
+  // 표시 구간 배경
+  svg.appendChild(el("rect", { x: X0, y: TOP - 12, width: W, height: PH + 24, rx: 6, fill: "none", stroke: "var(--rule)", "stroke-width": 1 }));
+  svg.appendChild(el("text", { class: "d-t3", x: X0 + W / 2, y: TOP - 20, "text-anchor": "middle" }, "표시 구간 " + SHOW + "봉"));
+
+  // 봉
+  vis.forEach(function (p, i) {
+    svg.appendChild(el("rect", { x: X(i) - cw * 0.22, y: Y(p), width: cw * 0.44, height: Math.max(1.5, Y(lo) - Y(p)), rx: 1.5, fill: "var(--ink-3)", opacity: 0.55 }));
+  });
+
+  // MA 선 — readFrom 부터 데이터를 읽었을 때 그릴 수 있는 구간
+  var firstDrawable = warmOn ? 0 : MA_P - 1;   // 표시 구간 내 첫 유효 인덱스
+  var pts = [];
+  for (var i = firstDrawable; i < SHOW; i++) {
+    var absIdx = start + i;
+    var sum = 0;
+    for (var k = 0; k < MA_P; k++) sum += WSERIES[absIdx - k];
+    pts.push(X(i).toFixed(1) + "," + Y(sum / MA_P).toFixed(1));
+  }
+  svg.appendChild(el("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--accent)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+
+  // 결손 구간 강조
+  if (!warmOn) {
+    svg.appendChild(el("rect", { x: X0, y: TOP - 12, width: (MA_P - 1) * cw, height: PH + 24, rx: 6, fill: "var(--up)", opacity: 0.09 }));
+    svg.appendChild(el("line", { x1: X0, y1: TOP + PH + 8, x2: X0 + (MA_P - 1) * cw, y2: TOP + PH + 8, stroke: "var(--up)", "stroke-width": 1.6 }));
+    svg.appendChild(el("text", { x: X0 + ((MA_P - 1) * cw) / 2, y: TOP + PH + 26, "text-anchor": "middle", fill: "var(--up)", "font-size": "11.5px", "font-family": "var(--sans)", "font-weight": "600" }, "MA선 결손 " + (MA_P - 1) + "봉"));
+  }
+
+  svg.appendChild(el("text", { class: "d-t2", x: 14, y: TOP + 4 }, "MA" + MA_P));
+  svg.appendChild(el("text", { class: "d-t3", x: 14, y: TOP + 20 }, "이동평균"));
+
+  var readN = warmOn ? SHOW + MA_P : SHOW;
+  document.getElementById("warmRead").innerHTML = "읽는 봉 <b>" + readN + "</b>개 · 그리는 봉 <b>" + SHOW + "</b>개";
+  document.getElementById("warmCap").innerHTML = warmOn
+    ? "<b>앞의 12봉을 더 읽으면 첫 봉부터 선이 이어진다.</b> 워밍업 구간은 계산에만 쓰이고 화면에는 그리지 않는다 — 읽는 범위와 그리는 범위가 다르다는 것이 이 규칙의 핵심이다."
+    : "<b>표시 구간만 읽으면 왼쪽 11봉에 MA선이 없다.</b> 12일 이동평균의 첫 값은 12번째 봉에서야 나오기 때문이다. 화면 버그처럼 보이지만 원인은 조회 범위에 있다.";
+}
+bindSeg("data-warm", function (v) { warmOn = v === "on"; drawWarm(); });
+drawWarm();
+</script>

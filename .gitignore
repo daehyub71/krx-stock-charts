@@ -1,0 +1,19 @@
+# 자격증명 — 절대 커밋 금지
+.env
+.env.local
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+out/
+
+# OS
+.DS_Store

@@ -1,0 +1,26 @@
+[project]
+name = "krx-stock-charts"
+version = "0.1.0"
+description = "KOSPI200 3년치 일·주·월봉 수집 파이프라인"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = ["venv", "web", "data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+exclude = ["venv/", "web/"]
+
+[[tool.mypy.overrides]]
+module = ["pykrx.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
