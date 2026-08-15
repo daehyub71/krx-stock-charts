@@ -1,6 +1,7 @@
 # 자격증명 — 절대 커밋 금지
-.env
-.env.local
+# 글롭으로 잡는다: .env.production, .env.bak 같은 미래의 파일까지 막기 위해서다.
+.env*
+!.env.example
 
 # Python
 venv/
