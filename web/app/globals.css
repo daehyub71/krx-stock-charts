@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+/* ── 디자인 토큰 (DESIGN §3 확정안) ──
+   라이트가 기본. 다크는 미디어쿼리(가드)와 [data-theme] 양쪽에서 재정의한다.
+   강조색은 조작 요소 전용이고, 상승/하락은 한국 증시 관행(적/청)을 따른다. */
+:root {
+  --paper: #faf9f5;
+  --surface: #fffefb;
+  --inset: #f1efe7;
+  --ink: #1e1d1a;
+  --ink-2: #57544c;
+  --ink-3: #8b8578;
+  --rule: #e4e1d7;
+  --rule-2: #efede5;
+  --accent: #c15f3c;
+  --accent-weak: #c15f3c1a;
+  --up: #c8372d;
+  --down: #2e6fbf;
+  --ma-1: #a87f1c;
+  --ma-2: #0e96ae;
+  --ma-3: #8a5ad0;
+  --ma-4: #b0435e;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #1b1a19;
+    --surface: #262624;
+    --inset: #2f2e2b;
+    --ink: #f4f2eb;
+    --ink-2: #b3aea2;
+    --ink-3: #857f74;
+    --rule: #3a3934;
+    --rule-2: #302f2c;
+    --accent: #d97757;
+    --accent-weak: #d9775726;
+    --up: #e0655a;
+    --down: #5a9be8;
+    --ma-1: #b58c2e;
+    --ma-2: #2aa0b8;
+    --ma-3: #9770de;
+    --ma-4: #cc5a78;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #1b1a19;
+  --surface: #262624;
+  --inset: #2f2e2b;
+  --ink: #f4f2eb;
+  --ink-2: #b3aea2;
+  --ink-3: #857f74;
+  --rule: #3a3934;
+  --rule-2: #302f2c;
+  --accent: #d97757;
+  --accent-weak: #d9775726;
+  --up: #e0655a;
+  --down: #5a9be8;
+  --ma-1: #b58c2e;
+  --ma-2: #2aa0b8;
+  --ma-3: #9770de;
+  --ma-4: #cc5a78;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-rule: var(--rule);
+  --color-rule-2: var(--rule-2);
+  --color-accent: var(--accent);
+  --color-up: var(--up);
+  --color-down: var(--down);
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Pretendard Variable", Pretendard,
+    "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* DESIGN §3: 모든 숫자는 고정폭 + 자릿수 정렬 */
+.num {
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
