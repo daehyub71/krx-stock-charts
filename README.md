@@ -18,11 +18,26 @@ the database schema.
 | M1 | Three-year backfill, resampling | ✅ Done |
 | M2 | Daily incremental update, GitHub Actions | ✅ Done |
 | M3 | Frontend foundation, Supabase read layer | ✅ Done |
-| M4 | Candlestick charts (lightweight-charts) | Planned |
-| M5 | Deployment, security review | Planned |
+| M4 | Candlestick charts (lightweight-charts) | ✅ Done |
+| M5 | Deployment, security review | In progress |
 
 Currently stored: **182,307 rows** across 200 tickers — 144,028 daily,
 30,976 weekly, 7,303 monthly, spanning 2023-08-14 to 2026-08-14 (46 MB).
+
+## Screenshots
+
+![Dashboard](docs/screenshots/dashboard-light.png)
+
+Daily candles with volume and four moving averages. The ticker rail on the left
+carries a sparkline and the latest change for each of the 200 constituents.
+
+| Dark theme | Weekly bars, three-year range |
+|---|---|
+| ![Dark](docs/screenshots/dashboard-dark.png) | ![Weekly](docs/screenshots/weekly-3y.png) |
+
+Switching the timeframe changes the moving-average set too — daily uses 5/20/60/120,
+weekly drops to 5/20/60, and monthly to 3/12, because a 120-period average on
+monthly bars would span ten years.
 
 ## Features
 
@@ -39,7 +54,10 @@ Currently stored: **182,307 rows** across 200 tickers — 144,028 daily,
   date is wrong, and `CHECK` constraints in Postgres that reject bad rows
   outright.
 - **Read-only web access.** The browser uses the anon key; row-level security
-  blocks every write path.
+  blocks every write path — verified against the live database, not assumed.
+- **Charts that stay readable.** Volume sits in its own pane, moving averages are
+  drawn from a warmup-extended series so lines start at the first visible bar, and
+  arrow keys walk the bars for keyboard users.
 
 ## Tech stack
 
@@ -49,7 +67,7 @@ Currently stored: **182,307 rows** across 200 tickers — 144,028 daily,
 | Storage | Supabase (PostgreSQL), tables prefixed `ksc_` |
 | Automation | GitHub Actions (weekdays, 18:00 KST) |
 | Web | Next.js 16, TypeScript, Tailwind CSS, lightweight-charts |
-| Tests | pytest (96), Vitest (51) |
+| Tests | pytest (96), Vitest (72) |
 
 ## Setup
 
@@ -124,7 +142,8 @@ web/
   lib/types.ts    shared contract, mirrors pipeline/models.py
   lib/load.ts     Supabase queries, including moving-average warmup
   lib/paginate.ts works around the 1000-row response cap
-  components/     TickerRail, and charts to come in M4
+  lib/chart.ts    bar → chart-series transforms, theme token reads
+  components/     TickerRail, CandleChart, QuoteHeader, StatTiles, DataTable
 docs/
   SPEC.md PLAN.md DESIGN.md TASKS.md
   mockups/        interactive design mockup and architecture explainer

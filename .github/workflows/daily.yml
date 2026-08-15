@@ -24,8 +24,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    # 입력은 셸 명령에 직접 보간하지 않고 환경 변수로 넘긴다.
+    # `${{ inputs.date }}`를 run: 안에 그대로 쓰면 임의 명령 주입 경로가 된다.
+    env:
+      RUN_DATE: ${{ inputs.date }}
+
     steps:
       - uses: actions/checkout@v4
+
+      # 입력 형식을 먼저 강제한다 — 방어를 두 겹으로 둔다(검증 + 인용).
+      - name: Validate date input
+        run: |
+          if [ -n "$RUN_DATE" ] && ! printf '%s' "$RUN_DATE" | grep -qE '^[0-9]{8}$'; then
+            echo "date 입력은 YYYYMMDD 8자리 숫자여야 합니다." >&2
+            exit 1
+          fi
 
       - uses: actions/setup-python@v5
         with:
@@ -43,7 +56,12 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python -m pipeline.main --universe ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
+        run: |
+          if [ -n "$RUN_DATE" ]; then
+            python -m pipeline.main --universe --date "$RUN_DATE"
+          else
+            python -m pipeline.main --universe
+          fi
 
       - name: Incremental update
         env:
@@ -51,4 +69,9 @@ jobs:
           KRX_PW: ${{ secrets.KRX_PW }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python -m pipeline.main --update ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
+        run: |
+          if [ -n "$RUN_DATE" ]; then
+            python -m pipeline.main --update --date "$RUN_DATE"
+          else
+            python -m pipeline.main --update
+          fi

@@ -15,11 +15,24 @@ KOSPI200 종목의 3년치 일봉·주봉·월봉을 한국거래소에서 수�
 | M1 | 3년 백필, 리샘플 | ✅ 완료 |
 | M2 | 일일 증분 갱신, GitHub Actions | ✅ 완료 |
 | M3 | 프론트 기반, Supabase 조회 계층 | ✅ 완료 |
-| M4 | 캔들 차트 (lightweight-charts) | 예정 |
-| M5 | 배포, 보안 점검 | 예정 |
+| M4 | 캔들 차트 (lightweight-charts) | ✅ 완료 |
+| M5 | 배포, 보안 점검 | 진행 중 |
 
 현재 적재량: 200종목 **182,307행** — 일봉 144,028 / 주봉 30,976 / 월봉 7,303,
 2023-08-14 ~ 2026-08-14 구간, 46MB.
+
+## 화면
+
+![대시보드](docs/screenshots/dashboard-light.png)
+
+일봉 캔들에 거래량과 이동평균 4선. 좌측 레일은 200종목 각각의 스파크라인과 전일 등락률을 담는다.
+
+| 다크 테마 | 주봉 · 3년 |
+|---|---|
+| ![다크](docs/screenshots/dashboard-dark.png) | ![주봉](docs/screenshots/weekly-3y.png) |
+
+주기를 바꾸면 이동평균 집합도 함께 바뀐다 — 일봉은 5/20/60/120, 주봉은 5/20/60,
+월봉은 3/12다. 월봉에 120기간 평균은 10년치라 의미가 없기 때문이다.
 
 ## 주요 기능
 
@@ -31,6 +44,9 @@ KOSPI200 종목의 3년치 일봉·주봉·월봉을 한국거래소에서 수�
 - **2중 검증** — 어느 종목 어느 날짜가 왜 잘못됐는지 알려주는 Python 검사와,
   오염된 행 자체를 거부하는 PostgreSQL `CHECK` 제약.
 - **읽기 전용 웹 접근** — 브라우저는 anon 키만 쓰고, RLS가 모든 쓰기를 막는다.
+  가정이 아니라 실제 DB에 쓰기를 시도해 차단을 확인했다.
+- **읽히는 차트** — 거래량은 별도 pane에 두고, 이동평균은 워밍업을 포함한 계열로 계산해
+  표시 첫 봉부터 선이 그려진다. 방향키로 봉을 훑을 수 있다.
 
 ## 기술 스택
 
@@ -40,7 +56,7 @@ KOSPI200 종목의 3년치 일봉·주봉·월봉을 한국거래소에서 수�
 | 저장 | Supabase (PostgreSQL), 테이블 접두어 `ksc_` |
 | 자동화 | GitHub Actions (평일 18:00 KST) |
 | 웹 | Next.js 16, TypeScript, Tailwind CSS, lightweight-charts |
-| 테스트 | pytest 96개, Vitest 51개 |
+| 테스트 | pytest 96개, Vitest 72개 |
 
 ## 설치
 
@@ -113,7 +129,8 @@ web/
   lib/types.ts    공유 계약 — pipeline/models.py와 1:1 대응
   lib/load.ts     Supabase 조회 (이동평균 워밍업 포함)
   lib/paginate.ts 1000행 응답 상한 우회
-  components/     TickerRail, 차트는 M4에서 추가
+  lib/chart.ts    봉 → 차트 시리즈 변환, 테마 토큰 읽기
+  components/     TickerRail, CandleChart, QuoteHeader, StatTiles, DataTable
 docs/
   SPEC.md PLAN.md DESIGN.md TASKS.md
   mockups/        동작하는 디자인 시안과 아키텍처 설명 페이지
