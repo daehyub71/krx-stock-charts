@@ -1,16 +1,18 @@
 "use client";
 
 /**
- * 시세판 메인 화면 (DESIGN §1 IA).
+ * 시세판 메인 화면 (DESIGN §1 IA · §5 확정 레이아웃).
  *
- * M3 범위: 종목 목록·검색·선택까지. 차트는 M4에서 lightweight-charts로 붙인다.
+ * 상태는 여기서만 들고, 컴포넌트는 받은 것을 그린다.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import CandleChart from "@/components/CandleChart";
+import DataTable from "@/components/DataTable";
+import QuoteHeader from "@/components/QuoteHeader";
+import StatTiles from "@/components/StatTiles";
 import TickerRail from "@/components/TickerRail";
 import { loadBars, loadMeta, loadSparklines, loadTickers } from "@/lib/load";
-import { periodStats } from "@/lib/indicators";
-import { changeOf, pct, volume, won } from "@/lib/format";
 import {
   RANGE_LABEL,
   TIMEFRAME_LABEL,
@@ -22,6 +24,7 @@ import {
 } from "@/lib/types";
 
 const RANGES: RangeKey[] = ["3M", "6M", "1Y", "3Y"];
+type View = "chart" | "table";
 
 export default function Page() {
   const [tickers, setTickers] = useState<Ticker[]>([]);
@@ -29,9 +32,19 @@ export default function Page() {
   const [selected, setSelected] = useState("005930");
   const [timeframe, setTimeframe] = useState<Timeframe>("daily");
   const [range, setRange] = useState<RangeKey>("1Y");
-  const [bars, setBars] = useState<Bar[]>([]);
-  const [asOf, setAsOf] = useState<string>("");
-  const [error, setError] = useState<string>("");
+  const [view, setView] = useState<View>("chart");
+
+  const [asOf, setAsOf] = useState("");
+  const [error, setError] = useState("");
+
+  // 조회 결과를 요청 키와 함께 보관한다. loading을 따로 세팅하지 않고
+  // "보관된 키가 현재 선택과 다른가"로 파생시킨다 — effect 안에서 동기 setState를
+  // 하지 않아도 되고, 종목을 바꿀 때 이전 데이터가 잠깐 비치는 일도 없다.
+  const [loaded, setLoaded] = useState<{ key: string; bars: Bar[]; warmup: number } | null>(null);
+  const requestKey = `${selected}|${timeframe}|${range}`;
+  const loading = loaded?.key !== requestKey;
+  const bars = loaded?.key === requestKey ? loaded.bars : [];
+  const warmup = loaded?.key === requestKey ? loaded.warmup : 0;
 
   useEffect(() => {
     loadTickers()
@@ -42,20 +55,31 @@ export default function Page() {
       .catch((e: Error) => setError(e.message));
     loadMeta("backfill")
       .then((m) => setAsOf(String(m?.updated ?? "")))
-      .catch(() => {});
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
+    let stale = false;
     loadBars(selected, timeframe, range)
-      .then((r) => setBars(r.visible))
-      .catch((e: Error) => setError(e.message));
-  }, [selected, timeframe, range]);
+      .then((r) => {
+        if (!stale) setLoaded({ key: requestKey, bars: r.withWarmup, warmup: r.warmup });
+      })
+      .catch((e: Error) => {
+        if (!stale) setError(e.message);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [selected, timeframe, range, requestKey]);
 
-  const meta = tickers.find((t) => t.ticker === selected);
-  const last = bars.at(-1);
-  const change = changeOf(last?.c ?? 0, bars.at(-2)?.c ?? null);
-  const stats = periodStats(bars, timeframe);
-  const changeColor = change.direction === "down" ? "var(--down)" : "var(--up)";
+  const toggleTheme = useCallback(() => {
+    const root = document.documentElement;
+    const stamped = root.getAttribute("data-theme");
+    const isDark = stamped
+      ? stamped === "dark"
+      : window.matchMedia("(prefers-color-scheme: dark)").matches;
+    root.setAttribute("data-theme", isDark ? "light" : "dark");
+  }, []);
 
   if (error) {
     return (
@@ -70,24 +94,50 @@ export default function Page() {
     );
   }
 
+  const meta = tickers.find((t) => t.ticker === selected);
+  const visible = bars.slice(warmup);
+
   return (
     <div className="mx-auto max-w-[1320px] px-5">
-      <header className="flex items-center gap-3 border-b border-[var(--rule)] py-4">
+      <header className="flex flex-wrap items-center gap-3 border-b border-[var(--rule)] py-4">
         <div className="grid h-7 w-7 place-items-center rounded-md bg-[var(--accent)]">
           <svg width={15} height={15} viewBox="0 0 17 17" fill="none" aria-hidden="true">
-            <path d="M2 12.5V14M6 7v7M10 9.5V14M14 3v11" stroke="#FFFEFB" strokeWidth={2} strokeLinecap="round" />
+            <path
+              d="M2 12.5V14M6 7v7M10 9.5V14M14 3v11"
+              stroke="#FFFEFB"
+              strokeWidth={2}
+              strokeLinecap="round"
+            />
+            <path
+              d="M2 9.5 6 4l4 3.5L15 2"
+              stroke="#FFFEFB"
+              strokeWidth={1.6}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.62}
+            />
           </svg>
         </div>
         <h1 className="text-[15px] font-semibold tracking-tight">시세판</h1>
         <span className="text-[12px] text-[var(--ink-3)]">KOSPI200 · 3년 일·주·월봉</span>
-        {asOf && (
-          <span className="num ml-auto rounded-full border border-[var(--rule)] bg-[var(--inset)] px-2.5 py-1 text-[11px] text-[var(--ink-2)]">
-            {asOf} 종가 기준
-          </span>
-        )}
+
+        <div className="ml-auto flex items-center gap-2">
+          {asOf && (
+            <span className="num rounded-full border border-[var(--rule)] bg-[var(--inset)] px-2.5 py-1 text-[11px] text-[var(--ink-2)]">
+              {asOf} 종가 기준
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="rounded-md border border-[var(--rule)] bg-[var(--surface)] px-2.5 py-1 text-[12px] text-[var(--ink-2)] hover:border-[var(--ink-3)] hover:text-[var(--ink)]"
+          >
+            테마 전환
+          </button>
+        </div>
       </header>
 
-      <div className="grid grid-cols-1 gap-5 py-5 md:grid-cols-[268px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 py-5 md:grid-cols-[268px_minmax(0,1fr)]">
         <TickerRail
           tickers={tickers}
           sparklines={sparklines}
@@ -95,66 +145,56 @@ export default function Page() {
           onSelect={setSelected}
         />
 
-        <main className="min-w-0 rounded-xl border border-[var(--rule)] bg-[var(--surface)]">
-          <div className="flex flex-wrap items-end gap-x-6 gap-y-3 p-5">
-            <div>
-              <h2 className="text-[21px] font-semibold tracking-tight">{meta?.name ?? "—"}</h2>
-              <div className="mt-1 flex items-center gap-2 text-[12px] text-[var(--ink-2)]">
-                <span className="num">{selected}</span>
-                {meta && (
-                  <>
-                    <span className="rounded border border-[var(--rule)] bg-[var(--inset)] px-1.5 text-[10.5px]">
-                      {meta.market}
-                    </span>
-                    <span className="rounded border border-[var(--rule)] bg-[var(--inset)] px-1.5 text-[10.5px]">
-                      {meta.sector}
-                    </span>
-                  </>
-                )}
+        <main className="flex min-w-0 flex-col gap-4">
+          <section className="overflow-hidden rounded-xl border border-[var(--rule)] bg-[var(--surface)]">
+            <QuoteHeader ticker={selected} meta={meta} bars={visible} />
+
+            <div className="flex flex-wrap items-center gap-2.5 border-y border-[var(--rule-2)] px-5 py-3">
+              <span className="text-[11px] text-[var(--ink-3)]">봉</span>
+              <Segmented
+                label="봉 주기"
+                options={TIMEFRAMES.map((tf) => ({ value: tf, label: TIMEFRAME_LABEL[tf] }))}
+                value={timeframe}
+                onChange={setTimeframe}
+              />
+              <span className="ml-2 text-[11px] text-[var(--ink-3)]">기간</span>
+              <Segmented
+                label="조회 기간"
+                options={RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))}
+                value={range}
+                onChange={setRange}
+              />
+              <div className="ml-auto">
+                <Segmented
+                  label="보기 방식"
+                  options={[
+                    { value: "chart" as View, label: "차트" },
+                    { value: "table" as View, label: "표" },
+                  ]}
+                  value={view}
+                  onChange={setView}
+                />
               </div>
             </div>
-            <div className="ml-auto flex items-baseline gap-3" style={{ color: changeColor }}>
-              <span className="num text-[30px] font-semibold leading-none">
-                {last ? won(last.c) : "—"}
-              </span>
-              <span className="num text-[14px] font-semibold">
-                {change.direction === "down" ? "▼" : "▲"} {won(Math.abs(change.abs))} ({pct(change.pct)})
-              </span>
-            </div>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 border-y border-[var(--rule-2)] px-5 py-3">
-            <span className="text-[11px] text-[var(--ink-3)]">봉</span>
-            <Segmented
-              options={TIMEFRAMES.map((tf) => ({ value: tf, label: TIMEFRAME_LABEL[tf] }))}
-              value={timeframe}
-              onChange={setTimeframe}
-            />
-            <span className="ml-2 text-[11px] text-[var(--ink-3)]">기간</span>
-            <Segmented
-              options={RANGES.map((r) => ({ value: r, label: RANGE_LABEL[r] }))}
-              value={range}
-              onChange={setRange}
-            />
-          </div>
+            {view === "chart" ? (
+              loading || visible.length === 0 ? (
+                <div className="grid h-[420px] place-items-center text-[13px] text-[var(--ink-3)]">
+                  {loading ? "불러오는 중…" : "표시할 봉이 없습니다"}
+                </div>
+              ) : (
+                <CandleChart bars={bars} warmup={warmup} timeframe={timeframe} />
+              )
+            ) : (
+              <div className="px-5 py-4 text-[12.5px] text-[var(--ink-3)]">
+                아래 표에서 같은 데이터를 확인할 수 있습니다.
+              </div>
+            )}
 
-          <div className="grid place-items-center border-b border-[var(--rule-2)] px-5 py-16 text-center">
-            <p className="text-[13px] text-[var(--ink-3)]">
-              캔들 차트는 M4에서 lightweight-charts로 붙입니다.
-              <br />
-              현재 {TIMEFRAME_LABEL[timeframe]} {bars.length}봉 조회됨
-              {bars.length > 0 && ` (${bars[0].d} ~ ${bars.at(-1)!.d})`}
-            </p>
-          </div>
+            <StatTiles bars={visible} timeframe={timeframe} range={range} />
+          </section>
 
-          <dl className="grid grid-cols-2 gap-px bg-[var(--rule-2)] md:grid-cols-5">
-            <Tile label="기간 수익률" value={pct(stats.returnPct)} sub={RANGE_LABEL[range]}
-              color={stats.returnPct >= 0 ? "var(--up)" : "var(--down)"} />
-            <Tile label="기간 최고가" value={won(stats.high)} sub={`종가 대비 ${last ? pct((last.c / stats.high - 1) * 100) : "—"}`} />
-            <Tile label="기간 최저가" value={won(stats.low)} sub={`종가 대비 ${last ? pct((last.c / stats.low - 1) * 100) : "—"}`} />
-            <Tile label="평균 거래량" value={volume(stats.avgVolume)} sub={`${TIMEFRAME_LABEL[timeframe]} 기준`} />
-            <Tile label="연율 변동성" value={`${stats.volatility.toFixed(1)}%`} sub="로그수익률 표준편차" />
-          </dl>
+          {view === "table" && <DataTable bars={visible} timeframe={timeframe} />}
         </main>
       </div>
     </div>
@@ -162,16 +202,22 @@ export default function Page() {
 }
 
 function Segmented<T extends string>({
+  label,
   options,
   value,
   onChange,
 }: {
+  label: string;
   options: { value: T; label: string }[];
   value: T;
   onChange: (v: T) => void;
 }) {
   return (
-    <div role="group" className="inline-flex gap-0.5 rounded-lg border border-[var(--rule)] bg-[var(--inset)] p-0.5">
+    <div
+      role="group"
+      aria-label={label}
+      className="inline-flex gap-0.5 rounded-lg border border-[var(--rule)] bg-[var(--inset)] p-0.5"
+    >
       {options.map((o) => (
         <button
           key={o.value}
@@ -180,25 +226,13 @@ function Segmented<T extends string>({
           onClick={() => onChange(o.value)}
           className={`rounded-md px-3 py-1.5 text-[12.5px] font-medium ${
             o.value === value
-              ? "bg-[var(--surface)] text-[var(--ink)]"
+              ? "bg-[var(--surface)] text-[var(--ink)] shadow-sm"
               : "text-[var(--ink-2)] hover:text-[var(--ink)]"
           }`}
         >
           {o.label}
         </button>
       ))}
-    </div>
-  );
-}
-
-function Tile({ label, value, sub, color }: { label: string; value: string; sub: string; color?: string }) {
-  return (
-    <div className="bg-[var(--surface)] px-5 py-3.5">
-      <dt className="text-[10px] font-semibold uppercase tracking-[0.11em] text-[var(--ink-3)]">{label}</dt>
-      <dd className="num mt-1 text-[19px] font-semibold tracking-tight" style={color ? { color } : undefined}>
-        {value}
-      </dd>
-      <dd className="mt-0.5 text-[11px] text-[var(--ink-3)]">{sub}</dd>
     </div>
   );
 }
