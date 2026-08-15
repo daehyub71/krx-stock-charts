@@ -1,6 +1,6 @@
 # krx-stock-charts
 
-> 🇰🇷 [한국어 README](README_KO.md)
+> 🇰🇷 [한국어 README](README_KO.md) · 🔗 **[Live demo](https://krx-stock-charts.vercel.app)**
 
 Three years of daily, weekly, and monthly candlestick data for the KOSPI 200,
 collected from the Korea Exchange and served through a Next.js dashboard.
@@ -19,7 +19,7 @@ the database schema.
 | M2 | Daily incremental update, GitHub Actions | ✅ Done |
 | M3 | Frontend foundation, Supabase read layer | ✅ Done |
 | M4 | Candlestick charts (lightweight-charts) | ✅ Done |
-| M5 | Deployment, security review | In progress |
+| M5 | Deployment, security review | ✅ Done |
 
 Currently stored: **182,307 rows** across 200 tickers — 144,028 daily,
 30,976 weekly, 7,303 monthly, spanning 2023-08-14 to 2026-08-14 (46 MB).

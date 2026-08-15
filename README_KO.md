@@ -1,6 +1,6 @@
 # krx-stock-charts
 
-> 🇺🇸 [English README](README.md)
+> 🇺🇸 [English README](README.md) · 🔗 **[배포 사이트](https://krx-stock-charts.vercel.app)**
 
 KOSPI200 종목의 3년치 일봉·주봉·월봉을 한국거래소에서 수집해 Next.js 대시보드로 보여준다.
 
@@ -16,7 +16,7 @@ KOSPI200 종목의 3년치 일봉·주봉·월봉을 한국거래소에서 수�
 | M2 | 일일 증분 갱신, GitHub Actions | ✅ 완료 |
 | M3 | 프론트 기반, Supabase 조회 계층 | ✅ 완료 |
 | M4 | 캔들 차트 (lightweight-charts) | ✅ 완료 |
-| M5 | 배포, 보안 점검 | 진행 중 |
+| M5 | 배포, 보안 점검 | ✅ 완료 |
 
 현재 적재량: 200종목 **182,307행** — 일봉 144,028 / 주봉 30,976 / 월봉 7,303,
 2023-08-14 ~ 2026-08-14 구간, 46MB.
