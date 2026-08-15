@@ -104,11 +104,13 @@ OHLCV 조회는 자격증명 없이도 동작하므로, 증상이 "종목목록�
 
 ## 진행 상태
 
-- **M0~M4 완료** (2026-08-15). 다음은 M5(배포·보안 점검).
+- **M0~M4 완료, M5 보안 점검 완료** (2026-08-15). 배포만 남음.
   - 데이터: `ksc_tickers` 200종목 · `ksc_bars` 182,307행 (일 144,028 / 주 30,976 / 월 7,303), 46MB
   - 자동화: GitHub Actions `daily.yml` 실행 성공 확인 (평일 18:00 KST cron)
   - 프론트: `web/` Next.js 16 + lightweight-charts 캔들/거래량/MA + 크로스헤어·키보드, Vitest 72개 통과
   - 로컬 확인: `cd web && npm run dev` → http://localhost:3000
-  - 리포: `daehyub71/krx-stock-charts` (**private** — 공개하려면 `gh repo edit --visibility public`)
+  - 리포: `daehyub71/krx-stock-charts` (**public**)
+  - ⚠ **배포 블로커**: anon 키가 같은 Supabase 프로젝트의 다른 테이블 12개(`profiles` 포함)를 읽는다.
+    `docs/TASKS.md` 「미해소 이슈 ②」 참조 — 해소 전 공개 배포 금지.
 - **DESIGN §5 확정 완료** (2026-08-15) — 따뜻한 종이 톤 / 적색 상승·청색 하락 / 시안 레이아웃 / lightweight-charts.
   통계 타일 구성(E)만 시안안 기본값이며 M4 전까지 변경 가능. **M4 착수 조건 충족.**
