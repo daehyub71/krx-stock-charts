@@ -132,3 +132,42 @@ describe("formatTickMark", () => {
     expect(formatTickMark("2026-03-05", 2)).toBe("3/5");
   });
 });
+
+describe("toVolumeBars — 거래대금 모드", () => {
+  const palette = { up: "#c8372d", down: "#2e6fbf" };
+  const bars: Bar[] = [
+    { d: "2026-08-10", o: 100, h: 110, l: 95, c: 105, v: 500, a: 52_500 },
+    { d: "2026-08-11", o: 105, h: 115, l: 100, c: 102, v: 300, a: 30_600 },
+  ];
+
+  it("plots volume by default", () => {
+    expect(toVolumeBars(bars, palette).map((b) => b.value)).toEqual([500, 300]);
+  });
+
+  it("plots amount when asked", () => {
+    expect(toVolumeBars(bars, palette, "amount").map((b) => b.value)).toEqual([52_500, 30_600]);
+  });
+
+  it("keeps the candle colour rule in both modes", () => {
+    const out = toVolumeBars(bars, palette, "amount");
+    expect(out[0].color).toBe(palette.up);
+    expect(out[1].color).toBe(palette.down);
+  });
+
+  it("drops bars with no amount rather than plotting zero", () => {
+    // 0으로 그리면 "거래가 없었다"는 거짓말이 된다 — 값이 없으면 점을 만들지 않는다
+    const mixed: Bar[] = [
+      { d: "2026-08-10", o: 100, h: 110, l: 95, c: 105, v: 500, a: null },
+      { d: "2026-08-11", o: 105, h: 115, l: 100, c: 102, v: 300, a: 30_600 },
+    ];
+    const out = toVolumeBars(mixed, palette, "amount");
+    expect(out.map((b) => b.time)).toEqual(["2026-08-11"]);
+  });
+
+  it("keeps every bar in volume mode even when amount is null", () => {
+    const mixed: Bar[] = [
+      { d: "2026-08-10", o: 100, h: 110, l: 95, c: 105, v: 500, a: null },
+    ];
+    expect(toVolumeBars(mixed, palette, "volume")).toHaveLength(1);
+  });
+});

@@ -56,6 +56,8 @@ export interface PeriodStats {
   low: number;
   /** 봉당 평균 거래량. */
   avgVolume: number;
+  /** 봉당 평균 거래대금. 구간에 값이 없는 봉이 하나라도 있으면 null. */
+  avgAmount: number | null;
   /** 로그수익률 표준편차를 연율화한 변동성 (%). */
   volatility: number;
 }
@@ -68,7 +70,7 @@ export interface PeriodStats {
  */
 export function periodStats(bars: readonly Bar[], timeframe: Timeframe): PeriodStats {
   if (bars.length === 0) {
-    return { returnPct: 0, high: 0, low: 0, avgVolume: 0, volatility: 0 };
+    return { returnPct: 0, high: 0, low: 0, avgVolume: 0, avgAmount: null, volatility: 0 };
   }
 
   const first = bars[0];
@@ -77,10 +79,14 @@ export function periodStats(bars: readonly Bar[], timeframe: Timeframe): PeriodS
   let high = -Infinity;
   let low = Infinity;
   let volumeSum = 0;
+  // 일부만 더한 평균은 사실이 아니므로, 값이 하나라도 빠지면 null로 둔다.
+  let amountSum: number | null = 0;
   for (const b of bars) {
     if (b.h > high) high = b.h;
     if (b.l < low) low = b.l;
     volumeSum += b.v;
+    if (b.a === null) amountSum = null;
+    else if (amountSum !== null) amountSum += b.a;
   }
 
   const returns: number[] = [];
@@ -101,6 +107,7 @@ export function periodStats(bars: readonly Bar[], timeframe: Timeframe): PeriodS
     high,
     low,
     avgVolume: volumeSum / bars.length,
+    avgAmount: amountSum === null ? null : amountSum / bars.length,
     volatility,
   };
 }

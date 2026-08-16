@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { won, pct, volume, changeOf } from "@/lib/format";
+import { won, pct, volume, amount, changeOf } from "@/lib/format";
 
 describe("won", () => {
   it("groups thousands", () => expect(won(1234567)).toBe("1,234,567"));
@@ -42,4 +42,34 @@ describe("changeOf", () => {
     expect(c.pct).toBe(0);
     expect(c.direction).toBe("flat");
   });
+});
+
+describe("amount", () => {
+  it("uses 조 above one trillion", () => {
+    // 삼성전자 하루 거래대금은 조 단위까지 간다
+    expect(amount(5_874_450_961_500)).toBe("5.87조");
+  });
+
+  it("uses 억 above one hundred million", () => {
+    expect(amount(334_258_460)).toBe("3.3억");
+  });
+
+  it("drops the decimal for large 억 values", () => {
+    expect(amount(52_000_000_000)).toBe("520억");
+  });
+
+  it("uses 만 for smaller values", () => {
+    expect(amount(12_345_678)).toBe("1,235만");
+  });
+
+  it("prints very small values plainly", () => {
+    expect(amount(8_420)).toBe("8,420");
+  });
+
+  it("renders a dash when there is no value", () => {
+    // 종목축으로 백필한 봉은 거래대금이 없다
+    expect(amount(null)).toBe("—");
+  });
+
+  it("handles zero", () => expect(amount(0)).toBe("0"));
 });

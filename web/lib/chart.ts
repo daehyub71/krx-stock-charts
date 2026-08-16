@@ -47,21 +47,30 @@ export function toCandles(bars: readonly Bar[]): Candle[] {
   }));
 }
 
+/** 하단 pane에 무엇을 그릴지. */
+export type VolumeMode = "volume" | "amount";
+
 /**
- * 거래량 히스토그램으로 변환한다.
+ * 하단 히스토그램으로 변환한다 — 거래량(주) 또는 거래대금(원).
  *
  * 색은 캔들 몸통과 같은 규칙을 쓴다 — 종가가 시가 이상이면 상승색.
  * 보합(종가 = 시가)을 상승으로 두는 것도 캔들과 맞춘 것이다.
+ *
+ * 거래대금 모드에서 값이 없는 봉은 **그리지 않는다.** 0으로 그리면
+ * "거래가 없었다"는 거짓말이 되기 때문이다 (종목축으로 백필한 봉이 여기 해당한다).
  */
 export function toVolumeBars(
   bars: readonly Bar[],
   palette: { up: string; down: string },
+  mode: VolumeMode = "volume",
 ): VolumeBar[] {
-  return bars.map((b) => ({
-    time: b.d,
-    value: b.v,
-    color: b.c >= b.o ? palette.up : palette.down,
-  }));
+  const out: VolumeBar[] = [];
+  for (const b of bars) {
+    const value = mode === "amount" ? b.a : b.v;
+    if (value === null) continue;
+    out.push({ time: b.d, value, color: b.c >= b.o ? palette.up : palette.down });
+  }
+  return out;
 }
 
 /**

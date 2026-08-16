@@ -28,6 +28,25 @@ export function volume(value: number): string {
   return NF.format(value);
 }
 
+/**
+ * 거래대금을 조/억/만 단위로 줄여 표시한다.
+ *
+ * 거래량(주)과 달리 **가격대가 다른 종목끼리 비교할 수 있어** 유동성 판단에 쓸모가 있다.
+ * 100원짜리 100만 주와 50만원짜리 100만 주는 거래량은 같지만 거래대금은 5천 배 차이다.
+ *
+ * @param value 원 단위 금액. 종목축으로 백필한 봉은 값이 없어 null이다.
+ */
+export function amount(value: number | null): string {
+  if (value === null) return "—";
+  if (value >= 1_000_000_000_000) return `${(value / 1_000_000_000_000).toFixed(2)}조`;
+  if (value >= 100_000_000) {
+    const eok = value / 100_000_000;
+    return `${eok >= 100 ? Math.round(eok) : eok.toFixed(1)}억`;
+  }
+  if (value >= 10_000) return `${NF.format(Math.round(value / 10_000))}만`;
+  return NF.format(value);
+}
+
 export type Direction = "up" | "down" | "flat";
 
 export interface Change {

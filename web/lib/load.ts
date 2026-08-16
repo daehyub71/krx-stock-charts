@@ -103,6 +103,12 @@ export async function loadSparklines(
   const sb = getSupabase();
   const groups = chunk(tickers, SPARKLINE_TICKER_CHUNK);
 
+  // 날짜를 안 자르면 종목당 3년치(157주)를 전부 받는다 — 300종목이면 47,000행,
+  // 페이지로는 48번 왕복이라 화면이 한참 비어 있게 된다. 필요한 구간만 자른다.
+  const since = new Date();
+  since.setDate(since.getDate() - barsPerTicker * 8);
+  const sinceIso = since.toISOString().slice(0, 10);
+
   const pages = await Promise.all(
     groups.map((group) =>
       fetchAllPages<{ ticker: string; d: string; c: number }>(() =>
@@ -110,6 +116,7 @@ export async function loadSparklines(
           .from(BARS_TABLE)
           .select("ticker,d,c")
           .eq("timeframe", TIMEFRAME_CODE[timeframe])
+          .gte("d", sinceIso)
           .in("ticker", group as string[])
           .order("ticker")
           .order("d", { ascending: false }),

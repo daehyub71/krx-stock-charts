@@ -45,6 +45,8 @@
   오염된 행 자체를 거부하는 PostgreSQL `CHECK` 제약.
 - **읽기 전용 웹 접근** — 브라우저는 anon 키만 쓰고, RLS가 모든 쓰기를 막는다.
   가정이 아니라 실제 DB에 쓰기를 시도해 차단을 확인했다.
+- **거래량과 거래대금 둘 다** — 하단 pane에서 전환한다. 거래대금은 가격대가 다른 종목끼리
+  비교가 되지만 거래량(주)은 안 된다.
 - **읽히는 차트** — 거래량은 별도 pane에 두고, 이동평균은 워밍업을 포함한 계열로 계산해
   표시 첫 봉부터 선이 그려진다. 방향키로 봉을 훑을 수 있다.
 
@@ -56,7 +58,7 @@
 | 저장 | Supabase (PostgreSQL), 테이블 접두어 `ksc_` |
 | 자동화 | GitHub Actions (평일 18:00 KST) |
 | 웹 | Next.js 16, TypeScript, Tailwind CSS, lightweight-charts |
-| 테스트 | pytest 110개, Vitest 78개 |
+| 테스트 | pytest 122개, Vitest 93개 |
 
 ## 설치
 

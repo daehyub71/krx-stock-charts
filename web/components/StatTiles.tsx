@@ -3,7 +3,7 @@
 /** 통계 타일 (DESIGN §5-E 확정 구성). */
 
 import { periodStats } from "@/lib/indicators";
-import { pct, volume, won } from "@/lib/format";
+import { amount, pct, volume, won } from "@/lib/format";
 import { RANGE_LABEL, TIMEFRAME_LABEL, type Bar, type RangeKey, type Timeframe } from "@/lib/types";
 
 export interface StatTilesProps {
@@ -17,7 +17,7 @@ export default function StatTiles({ bars, timeframe, range }: StatTilesProps) {
   const last = bars.at(-1);
 
   return (
-    <dl className="grid grid-cols-2 gap-px bg-[var(--rule-2)] md:grid-cols-5">
+    <dl className="grid grid-cols-2 gap-px bg-[var(--rule-2)] md:grid-cols-6">
       <Tile
         label="기간 수익률"
         value={pct(stats.returnPct)}
@@ -38,6 +38,11 @@ export default function StatTiles({ bars, timeframe, range }: StatTilesProps) {
         label="평균 거래량"
         value={volume(stats.avgVolume)}
         sub={`${TIMEFRAME_LABEL[timeframe]} 기준`}
+      />
+      <Tile
+        label="평균 거래대금"
+        value={amount(stats.avgAmount)}
+        sub={stats.avgAmount === null ? "일부 구간 미수집" : `${TIMEFRAME_LABEL[timeframe]} 기준`}
       />
       <Tile
         label="연율 변동성"

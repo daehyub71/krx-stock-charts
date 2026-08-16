@@ -6,7 +6,7 @@
  * 차트와 같은 데이터를 표로도 제공한다 — 색만으로 정보를 전달하지 않기 위한 대체 표현이다.
  */
 
-import { pct, won } from "@/lib/format";
+import { amount, pct, won } from "@/lib/format";
 import { TIMEFRAME_LABEL, type Bar, type Timeframe } from "@/lib/types";
 
 export interface DataTableProps {
@@ -30,7 +30,7 @@ export default function DataTable({ bars, timeframe, limit = 40 }: DataTableProp
         <table className="w-full border-collapse text-[12.5px]">
           <thead>
             <tr>
-              {["일자", "시가", "고가", "저가", "종가", "등락률", "거래량"].map((h, i) => (
+              {["일자", "시가", "고가", "저가", "종가", "등락률", "거래량", "거래대금"].map((h, i) => (
                 <th
                   key={h}
                   scope="col"
@@ -60,6 +60,7 @@ export default function DataTable({ bars, timeframe, limit = 40 }: DataTableProp
                     {change === null ? "—" : pct(change)}
                   </Cell>
                   <Cell>{b.v.toLocaleString("ko-KR")}</Cell>
+                  <Cell>{amount(b.a)}</Cell>
                 </tr>
               );
             })}

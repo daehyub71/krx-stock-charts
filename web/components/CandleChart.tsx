@@ -25,8 +25,9 @@ import {
   toVolumeBars,
   type ChartPalette,
   type MaLine,
+  type VolumeMode,
 } from "@/lib/chart";
-import { pct, volume as fmtVolume, won } from "@/lib/format";
+import { amount as fmtAmount, pct, volume as fmtVolume, won } from "@/lib/format";
 import type { Bar, Timeframe } from "@/lib/types";
 
 export interface CandleChartProps {
@@ -36,6 +37,8 @@ export interface CandleChartProps {
   warmup: number;
   timeframe: Timeframe;
   height?: number;
+  /** 하단 pane에 거래량과 거래대금 중 무엇을 그릴지. */
+  volumeMode?: VolumeMode;
 }
 
 interface HoverInfo {
@@ -57,6 +60,7 @@ export default function CandleChart({
   warmup,
   timeframe,
   height = 380,
+  volumeMode = "volume",
 }: CandleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -115,7 +119,8 @@ export default function CandleChart({
       handleScale: { axisPressedMouseMove: false },
       localization: {
         locale: "ko-KR",
-        priceFormatter: (p: number) => won(p),
+        // priceFormatter를 여기 두면 **모든 pane의 축을 덮어써서** 거래대금 축까지
+        // 원 단위로 찍힌다. 축 포맷은 시리즈별 priceFormat으로 준다.
         // 크로스헤어 하단 라벨. 기본값은 "12 8월 '26"처럼 순서가 뒤섞여 나온다.
         timeFormatter: (time: unknown) =>
           typeof time === "string"
@@ -128,11 +133,16 @@ export default function CandleChart({
     candleRef.current = chart.addSeries(CandlestickSeries, {
       priceLineVisible: false,
       lastValueVisible: true,
+      priceFormat: { type: "custom", minMove: 1, formatter: (v: number) => won(v) },
     });
     // 거래량은 별도 pane에 둔다 — 가격 축과 눈금을 섞지 않는다.
     volumeRef.current = chart.addSeries(
       HistogramSeries,
-      { priceLineVisible: false, lastValueVisible: false, priceFormat: { type: "volume" } },
+      {
+        priceLineVisible: false,
+        lastValueVisible: false,
+        priceFormat: { type: "custom", minMove: 1, formatter: (v: number) => fmtVolume(v) },
+      },
       1,
     );
     chart.panes()[1]?.setHeight(Math.round(height * 0.26));
@@ -171,8 +181,20 @@ export default function CandleChart({
     });
     candle.setData(toCandles(visible) as never);
 
+    // custom 포맷은 minMove가 있어야 축에 실제로 적용된다 — 없으면 원시 숫자가 그대로 찍힌다.
+    vol.applyOptions({
+      priceFormat: {
+        type: "custom",
+        minMove: 1,
+        formatter: (v: number) => (volumeMode === "amount" ? fmtAmount(v) : fmtVolume(v)),
+      },
+    });
     vol.setData(
-      toVolumeBars(visible, { up: `${palette.up}55`, down: `${palette.down}55` }) as never,
+      toVolumeBars(
+        visible,
+        { up: `${palette.up}55`, down: `${palette.down}55` },
+        volumeMode,
+      ) as never,
     );
 
     chart.applyOptions({
@@ -207,7 +229,7 @@ export default function CandleChart({
     setLegend(lines);
 
     chart.timeScale().fitContent();
-  }, [bars, warmup, timeframe, theme, visible]);
+  }, [bars, warmup, timeframe, theme, visible, volumeMode]);
 
   // 크로스헤어 → 툴팁
   useEffect(() => {
@@ -324,6 +346,8 @@ export default function CandleChart({
             </dd>
             <dt className="text-[var(--ink-3)]">거래량</dt>
             <dd className="num text-right font-medium">{fmtVolume(hover.bar.v)}</dd>
+            <dt className="text-[var(--ink-3)]">거래대금</dt>
+            <dd className="num text-right font-medium">{fmtAmount(hover.bar.a)}</dd>
           </dl>
         </div>
       )}

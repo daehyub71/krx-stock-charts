@@ -91,3 +91,24 @@ describe("periodStats", () => {
     expect(s.returnPct).toBe(0);
   });
 });
+
+describe("periodStats — 거래대금", () => {
+  function withAmount(d: string, c: number, a: number | null): Bar {
+    return { d, o: c, h: c, l: c, c, v: 100, a };
+  }
+
+  it("averages amount when every bar has one", () => {
+    const bars = [withAmount("d1", 100, 1000), withAmount("d2", 100, 3000)];
+    expect(periodStats(bars, "daily").avgAmount).toBe(2000);
+  });
+
+  it("returns null when any bar is missing an amount", () => {
+    // 일부만 더한 평균은 사실이 아니다 — 백필분과 갱신분이 섞이면 이 경우가 된다
+    const bars = [withAmount("d1", 100, 1000), withAmount("d2", 100, null)];
+    expect(periodStats(bars, "daily").avgAmount).toBeNull();
+  });
+
+  it("returns null for an empty series", () => {
+    expect(periodStats([], "daily").avgAmount).toBeNull();
+  });
+});

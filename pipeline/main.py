@@ -7,6 +7,7 @@
     python -m pipeline.main --backfill --date 20260814    # 기준일 지정
     python -m pipeline.main --update                      # 당일 증분 갱신 (M2)
     python -m pipeline.main --update --date 20260814      # 특정 거래일 갱신
+    python -m pipeline.main --fill-amount                 # 거래대금 소급 채우기 (일회성)
 """
 
 from __future__ import annotations
@@ -212,6 +213,49 @@ def run_update(date: str) -> int:
     return 0
 
 
+def run_fill_amount(date_str: str) -> int:
+    """거래대금을 소급해 채운다 (일회성).
+
+    백필은 종목축으로 돌아 거래대금이 없다. 날짜축으로 다시 훑어 메운다.
+
+    Args:
+        date_str: 기준일 ("YYYYMMDD"). 이 날로부터 과거 3년을 채운다.
+
+    Returns:
+        프로세스 종료 코드.
+    """
+    import time
+    from datetime import date as _date
+
+    from pipeline import amount
+
+    end = _date(int(date_str[:4]), int(date_str[4:6]), int(date_str[6:]))
+    start_str = _shift_years(date_str, -config.BACKFILL_YEARS)
+    start = _date(int(start_str[:4]), int(start_str[4:6]), int(start_str[6:]))
+
+    print(f"거래대금 채우기 {start} ~ {end}")
+    print("날짜축 조회 — 하루 1회 요청으로 전 종목을 받는다\n")
+
+    began = time.time()
+    try:
+        result = amount.fill_amounts(start, end)
+    except Exception as exc:  # noqa: BLE001
+        print(f"오류: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"\n완료 ({(time.time() - began) / 60:.1f}분)")
+    print(f"  거래일     : {result.trading_days}일 (휴장 {result.holidays}일)")
+    print(f"  조회 행수  : {result.fetched_rows:,}")
+    print(f"  일봉 갱신  : {result.updated_daily:,}행")
+    print(f"  주봉 갱신  : {result.updated_weekly:,}행")
+    print(f"  월봉 갱신  : {result.updated_monthly:,}행")
+    if result.failed_dates:
+        failed = f"{len(result.failed_dates)}일 {result.failed_dates[:5]}"
+        print(f"  조회 실패  : {failed}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def _shift_years(date: str, years: int) -> str:
     """YYYYMMDD 날짜를 지정한 연수만큼 이동한다."""
     from datetime import date as _date
@@ -230,6 +274,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--universe", action="store_true", help="종목 유니버스 갱신 (M0)")
     parser.add_argument("--backfill", action="store_true", help="3년치 일·주·월봉 백필 (M1)")
     parser.add_argument("--update", action="store_true", help="당일 증분 갱신 (M2)")
+    parser.add_argument(
+        "--fill-amount", action="store_true", help="거래대금 소급 채우기 (일회성)"
+    )
     parser.add_argument("--date", default=None, help='기준일 "YYYYMMDD" (기본: 오늘)')
     parser.add_argument("--limit", type=int, default=None, help="대상 종목 수 상한 (시험 실행용)")
     args = parser.parse_args(argv)
@@ -247,6 +294,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.update:
         return run_update(date)
+
+    if args.fill_amount:
+        return run_fill_amount(date)
 
     parser.print_help()
     return 0

@@ -6,7 +6,7 @@
  * 상태는 여기서만 들고, 컴포넌트는 받은 것을 그린다.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import CandleChart from "@/components/CandleChart";
 import DataTable from "@/components/DataTable";
 import QuoteHeader from "@/components/QuoteHeader";
@@ -29,6 +29,8 @@ import {
   type Timeframe,
 } from "@/lib/types";
 
+import type { VolumeMode } from "@/lib/chart";
+
 const RANGES: RangeKey[] = ["3M", "6M", "1Y", "3Y"];
 type View = "chart" | "table";
 
@@ -39,6 +41,7 @@ export default function Page() {
   const [timeframe, setTimeframe] = useState<Timeframe>("daily");
   const [range, setRange] = useState<RangeKey>("1Y");
   const [view, setView] = useState<View>("chart");
+  const [volumeMode, setVolumeMode] = useState<VolumeMode>("volume");
 
   const [asOf, setAsOf] = useState("");
   const [error, setError] = useState("");
@@ -80,19 +83,25 @@ export default function Page() {
     };
   }, [selected, timeframe, range, requestKey]);
 
-  // 레일이 보여주는 종목 중 아직 스파크라인이 없는 것만 채운다.
+  // 이미 요청한 종목을 기억한다. state 갱신자 안에서 부수효과를 내면
+  // React가 갱신자를 두 번 호출할 때 요청이 중복되고, 반환값이 그대로라 렌더도 안 된다.
+  const requested = useRef(new Set<string>());
+
+  /** 레일에 보이는 종목 중 아직 안 받은 것만 채운다. */
   const fillSparklines = useCallback((visible: string[]) => {
-    setSparklines((prev) => {
-      const missing = visible.filter((t) => !prev.has(t)).slice(0, SPARKLINE_TICKER_CHUNK);
-      if (missing.length > 0) {
-        loadSparklines(missing)
-          .then((more) =>
-            setSparklines((cur) => (more.size > 0 ? new Map([...cur, ...more]) : cur)),
-          )
-          .catch(() => undefined);
-      }
-      return prev;
-    });
+    const missing = visible
+      .filter((t) => !requested.current.has(t))
+      .slice(0, SPARKLINE_TICKER_CHUNK);
+    if (missing.length === 0) return;
+
+    for (const t of missing) requested.current.add(t);
+    loadSparklines(missing)
+      .then((more) => {
+        if (more.size > 0) setSparklines((cur) => new Map([...cur, ...more]));
+      })
+      .catch(() => {
+        for (const t of missing) requested.current.delete(t);
+      });
   }, []);
 
   const toggleTheme = useCallback(() => {
@@ -142,7 +151,7 @@ export default function Page() {
           </svg>
         </div>
         <h1 className="text-[15px] font-semibold tracking-tight">시세판</h1>
-        <span className="text-[12px] text-[var(--ink-3)]">KOSPI200 · 3년 일·주·월봉</span>
+        <span className="text-[12px] text-[var(--ink-3)]">KOSPI·KOSDAQ 전 종목 · 3년 일·주·월봉</span>
 
         <div className="ml-auto flex items-center gap-2">
           {asOf && (
@@ -188,6 +197,16 @@ export default function Page() {
                 value={range}
                 onChange={setRange}
               />
+              <span className="ml-2 text-[11px] text-[var(--ink-3)]">하단</span>
+              <Segmented
+                label="하단 지표"
+                options={[
+                  { value: "volume" as VolumeMode, label: "거래량" },
+                  { value: "amount" as VolumeMode, label: "거래대금" },
+                ]}
+                value={volumeMode}
+                onChange={setVolumeMode}
+              />
               <div className="ml-auto">
                 <Segmented
                   label="보기 방식"
@@ -207,7 +226,12 @@ export default function Page() {
                   {loading ? "불러오는 중…" : "표시할 봉이 없습니다"}
                 </div>
               ) : (
-                <CandleChart bars={bars} warmup={warmup} timeframe={timeframe} />
+                <CandleChart
+                  bars={bars}
+                  warmup={warmup}
+                  timeframe={timeframe}
+                  volumeMode={volumeMode}
+                />
               )
             ) : (
               <div className="px-5 py-4 text-[12.5px] text-[var(--ink-3)]">

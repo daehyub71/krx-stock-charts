@@ -55,6 +55,8 @@ monthly bars would span ten years.
   outright.
 - **Read-only web access.** The browser uses the anon key; row-level security
   blocks every write path — verified against the live database, not assumed.
+- **Turnover as well as volume.** The bottom pane switches between the two; turnover
+  is comparable across price levels, which raw share count is not.
 - **Charts that stay readable.** Volume sits in its own pane, moving averages are
   drawn from a warmup-extended series so lines start at the first visible bar, and
   arrow keys walk the bars for keyboard users.
@@ -67,7 +69,7 @@ monthly bars would span ten years.
 | Storage | Supabase (PostgreSQL), tables prefixed `ksc_` |
 | Automation | GitHub Actions (weekdays, 18:00 KST) |
 | Web | Next.js 16, TypeScript, Tailwind CSS, lightweight-charts |
-| Tests | pytest (110), Vitest (78) |
+| Tests | pytest (122), Vitest (93) |
 
 ## Setup
 
