@@ -12,7 +12,13 @@ import DataTable from "@/components/DataTable";
 import QuoteHeader from "@/components/QuoteHeader";
 import StatTiles from "@/components/StatTiles";
 import TickerRail from "@/components/TickerRail";
-import { loadBars, loadMeta, loadSparklines, loadTickers } from "@/lib/load";
+import {
+  SPARKLINE_TICKER_CHUNK,
+  loadBars,
+  loadMeta,
+  loadSparklines,
+  loadTickers,
+} from "@/lib/load";
 import {
   RANGE_LABEL,
   TIMEFRAME_LABEL,
@@ -48,9 +54,11 @@ export default function Page() {
 
   useEffect(() => {
     loadTickers()
-      .then(async (list) => {
+      .then((list) => {
         setTickers(list);
-        setSparklines(await loadSparklines(list.map((t) => t.ticker)));
+
+        // 전 종목 2,763개의 스파크라인을 한 번에 받으면 약 7만 행이라 첫 화면이 20초 가까이 늦다.
+        // 레일에 실제로 보이는 종목만 받는다 (아래 fillSparklines).
       })
       .catch((e: Error) => setError(e.message));
     loadMeta("backfill")
@@ -71,6 +79,21 @@ export default function Page() {
       stale = true;
     };
   }, [selected, timeframe, range, requestKey]);
+
+  // 레일이 보여주는 종목 중 아직 스파크라인이 없는 것만 채운다.
+  const fillSparklines = useCallback((visible: string[]) => {
+    setSparklines((prev) => {
+      const missing = visible.filter((t) => !prev.has(t)).slice(0, SPARKLINE_TICKER_CHUNK);
+      if (missing.length > 0) {
+        loadSparklines(missing)
+          .then((more) =>
+            setSparklines((cur) => (more.size > 0 ? new Map([...cur, ...more]) : cur)),
+          )
+          .catch(() => undefined);
+      }
+      return prev;
+    });
+  }, []);
 
   const toggleTheme = useCallback(() => {
     const root = document.documentElement;
@@ -143,6 +166,7 @@ export default function Page() {
           sparklines={sparklines}
           selected={selected}
           onSelect={setSelected}
+          onVisibleChange={fillSparklines}
         />
 
         <main className="flex min-w-0 flex-col gap-4">

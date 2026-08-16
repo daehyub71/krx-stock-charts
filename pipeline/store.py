@@ -13,7 +13,7 @@ import os
 from collections.abc import Iterator, Sequence
 from typing import Any, Protocol
 
-from pipeline.models import Bar, Ticker, Timeframe
+from pipeline.models import TIMEFRAME_CODE, Bar, Ticker, Timeframe
 
 TICKERS_TABLE = "ksc_tickers"
 BARS_TABLE = "ksc_bars"
@@ -21,6 +21,9 @@ META_TABLE = "ksc_meta"
 
 # Supabase REST는 요청 크기에 제한이 있어 대량 삽입을 나눠 보낸다.
 DEFAULT_BATCH = 500
+
+# Supabase REST가 한 응답에 담아주는 최대 행 수. 이보다 크게 요청해도 조용히 잘린다.
+DEFAULT_PAGE = 1000
 
 
 class SupabaseLike(Protocol):
@@ -80,7 +83,7 @@ def bar_rows(ticker: str, timeframe: Timeframe, bars: Sequence[Bar]) -> list[dic
     return [
         {
             "ticker": ticker,
-            "timeframe": timeframe,
+            "timeframe": TIMEFRAME_CODE[timeframe],
             "d": b.date,
             "o": b.open,
             "h": b.high,
@@ -179,7 +182,7 @@ def fetch_daily_since(
         query = (
             client.table(BARS_TABLE)
             .select("ticker,d,o,h,l,c,v,a")
-            .eq("timeframe", "daily")
+            .eq("timeframe", TIMEFRAME_CODE["daily"])
             .gte("d", since)
         )
         if tickers is not None:
@@ -202,5 +205,51 @@ def fetch_daily_since(
         if len(rows) < page:
             break
         offset += page
+
+    return out
+
+
+def fetch_all_tickers(client: SupabaseLike, page: int = DEFAULT_PAGE) -> list[Ticker]:
+    """`ksc_tickers` 전체를 티커 오름차순으로 읽는다.
+
+    **Supabase REST는 응답을 1000행에서 조용히 자른다.** `select("*")`만 쓰면
+    전 종목(약 2,763개) 중 1000개만 돌아오고, 오류도 나지 않는다 —
+    실제로 전 종목 백필을 돌리다 `[50/1000]`을 보고서야 알았다.
+
+    Args:
+        client: Supabase 클라이언트.
+        page: 페이지 크기.
+
+    Returns:
+        Ticker 리스트 (티커 오름차순).
+    """
+    out: list[Ticker] = []
+    offset = 0
+
+    while True:
+        rows = (
+            client.table(TICKERS_TABLE)
+            .select("ticker,name,market,sector")
+            .order("ticker")
+            .range(offset, offset + page - 1)
+            .execute()
+            .data
+        )
+        if not rows:
+            break
+
+        out.extend(
+            Ticker(
+                ticker=str(r["ticker"]),
+                name=str(r["name"]),
+                market=str(r["market"]),
+                sector=str(r.get("sector") or ""),
+            )
+            for r in rows
+        )
+
+        if len(rows) < page:
+            break
+        offset += len(rows)
 
     return out

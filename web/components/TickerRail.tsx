@@ -7,7 +7,7 @@
  * 스파크라인은 최근 26주 종가를 그린다.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { pct } from "@/lib/format";
 import type { Ticker } from "@/lib/types";
 
@@ -17,6 +17,8 @@ export interface TickerRailProps {
   sparklines?: Map<string, number[]>;
   selected: string;
   onSelect: (ticker: string) => void;
+  /** 현재 검색으로 걸러진 목록. 상위가 이 종목들의 스파크라인만 불러오게 한다. */
+  onVisibleChange?: (tickers: string[]) => void;
 }
 
 /**
@@ -52,9 +54,14 @@ export default function TickerRail({
   sparklines,
   selected,
   onSelect,
+  onVisibleChange,
 }: TickerRailProps) {
   const [query, setQuery] = useState("");
   const visible = useMemo(() => filterTickers(tickers, query), [tickers, query]);
+
+  useEffect(() => {
+    onVisibleChange?.(visible.map((t) => t.ticker));
+  }, [visible, onVisibleChange]);
 
   return (
     <aside className="overflow-hidden rounded-xl border border-[var(--rule)] bg-[var(--surface)]">
@@ -121,7 +128,9 @@ export default function TickerRail({
       </ul>
 
       <div className="border-t border-[var(--rule-2)] px-3.5 py-2 text-[11px] text-[var(--ink-3)]">
-        {query ? `${visible.length}종목 검색됨` : `KOSPI200 ${tickers.length}종목`}
+        {query
+          ? `${visible.length}종목 검색됨`
+          : `KOSPI·KOSDAQ ${tickers.length.toLocaleString("ko-KR")}종목`}
       </div>
     </aside>
   );

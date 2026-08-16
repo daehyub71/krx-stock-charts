@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from pipeline.models import Ticker
-from pipeline.store import TICKERS_TABLE, chunked, ticker_rows, upsert_tickers
+from pipeline.store import (
+    TICKERS_TABLE,
+    chunked,
+    fetch_all_tickers,
+    ticker_rows,
+    upsert_tickers,
+)
 
 
 class FakeQuery:
@@ -23,6 +29,44 @@ class FakeQuery:
 
     def execute(self) -> object:
         return object()
+
+
+class PagedRange:
+    """Supabase가 1000행에서 잘라 돌려주는 동작을 흉내 낸다."""
+
+    CAP = 1000
+
+    def __init__(self, total: int, ranges: list[tuple[int, int]]) -> None:
+        self._total, self._ranges = total, ranges
+
+    def select(self, *_a: Any, **_k: Any) -> PagedRange:
+        return self
+
+    def order(self, *_a: Any, **_k: Any) -> PagedRange:
+        return self
+
+    def range(self, start: int, end: int) -> PagedRange:
+        self._ranges.append((start, end))
+        self._start, self._end = start, end
+        return self
+
+    def execute(self) -> Any:
+        size = min(self._end - self._start + 1, self.CAP)
+        n = max(0, min(size, self._total - self._start))
+        rows = [
+            {"ticker": f"{self._start + i:06d}", "name": f"종목{i}",
+             "market": "KOSPI", "sector": ""}
+            for i in range(n)
+        ]
+        return type("R", (), {"data": rows})()
+
+
+class PagedClient:
+    def __init__(self, total: int) -> None:
+        self.total, self.ranges = total, []
+
+    def table(self, _name: str) -> PagedRange:
+        return PagedRange(self.total, self.ranges)
 
 
 class FakeClient:
@@ -103,3 +147,33 @@ class TestUpsertTickers:
         client = FakeClient()
         n = upsert_tickers(client, [Ticker("005930", "삼성전자", "KOSPI", "")])
         assert n == 1
+
+
+class TestFetchAllTickers:
+    """1000행 상한 대응 — 전 종목(2,763개)은 한 페이지에 안 들어간다."""
+
+    def test_pages_past_the_thousand_row_cap(self) -> None:
+        client = PagedClient(total=2763)
+        rows = fetch_all_tickers(client)
+        assert len(rows) == 2763
+        assert len(client.ranges) > 1
+
+    def test_single_request_when_under_one_page(self) -> None:
+        client = PagedClient(total=300)
+        assert len(fetch_all_tickers(client)) == 300
+        assert len(client.ranges) == 1
+
+    def test_requests_contiguous_ranges(self) -> None:
+        client = PagedClient(total=2763)
+        fetch_all_tickers(client)
+        for i in range(1, len(client.ranges)):
+            assert client.ranges[i][0] == client.ranges[i - 1][1] + 1
+
+    def test_empty_table(self) -> None:
+        client = PagedClient(total=0)
+        assert fetch_all_tickers(client) == []
+
+    def test_returns_ticker_objects(self) -> None:
+        client = PagedClient(total=2)
+        out = fetch_all_tickers(client)
+        assert out[0].ticker == "000000" and out[0].market in ("KOSPI", "KOSDAQ")

@@ -16,7 +16,6 @@ import sys
 from datetime import datetime
 
 from pipeline import config
-from pipeline.models import Ticker
 
 
 def _default_date() -> str:
@@ -95,10 +94,7 @@ def run_backfill(date: str, limit: int | None) -> int:
         print(f"오류: Supabase 연결 실패: {exc}", file=sys.stderr)
         return 1
 
-    rows = client.table(store.TICKERS_TABLE).select("*").order("ticker").execute()
-    tickers = [
-        Ticker(r["ticker"], r["name"], r["market"], r.get("sector", "")) for r in rows.data
-    ]
+    tickers = store.fetch_all_tickers(client)
     if not tickers:
         print(
             "오류: ksc_tickers가 비어 있습니다. 먼저 --universe 를 실행하세요.",
@@ -159,8 +155,7 @@ def run_update(date: str) -> int:
         print(f"오류: Supabase 연결 실패: {exc}", file=sys.stderr)
         return 1
 
-    rows = client.table(store.TICKERS_TABLE).select("ticker").order("ticker").execute()
-    tickers = [r["ticker"] for r in rows.data]
+    tickers = [t.ticker for t in store.fetch_all_tickers(client)]
     if not tickers:
         print("오류: ksc_tickers가 비어 있습니다. 먼저 --universe 를 실행하세요.", file=sys.stderr)
         return 1

@@ -91,30 +91,44 @@ def build_universe(
 
 
 def fetch_universe(date: str) -> list[Ticker]:
-    """KRX에서 KOSPI200 유니버스를 조회해 조립한다.
+    """KRX에서 KOSPI·KOSDAQ 전 종목을 조회해 조립한다 (SPEC v2.0 F1).
+
+    시장별로 목록·종목명·업종을 각각 **1회씩**만 부른다 — 종목당 개별 조회는
+    2,700종목이면 한 시간이 넘는다.
 
     Args:
         date: 기준일 ("YYYYMMDD").
 
     Returns:
-        Ticker 리스트.
+        Ticker 리스트 (티커 오름차순).
 
     Raises:
-        KrxError: 구성종목 조회에 실패한 경우.
+        KrxError: 어느 시장에서도 종목을 얻지 못한 경우.
     """
-    codes = krx_client.get_kospi200_codes()
-    kospi_codes = krx_client.get_market_codes(date, "KOSPI")
+    codes: list[str] = []
+    name_of: dict[str, str] = {}
+    sector_of: dict[str, str] = {}
+    kospi_codes: set[str] = set()
 
-    # 종목명·업종을 시장별 1회 호출로 확보한다 (종목당 개별 조회 대비 약 900배 빠르다)
-    name_of, sector_of = krx_client.get_market_profile(date, "KOSPI")
-    if not all(code in name_of for code in codes):
-        kosdaq_names, kosdaq_sectors = krx_client.get_market_profile(date, "KOSDAQ")
-        name_of = {**kosdaq_names, **name_of}
-        sector_of = {**kosdaq_sectors, **sector_of}
+    for market in ("KOSPI", "KOSDAQ"):
+        market_codes = krx_client.get_market_codes(date, market)
+        if market == "KOSPI":
+            kospi_codes = set(market_codes)
+        codes.extend(sorted(market_codes))
+
+        names, sectors = krx_client.get_market_profile(date, market)
+        # 앞선 시장의 값을 덮어쓰지 않는다 — 티커는 시장 간 겹치지 않지만 방어적으로 둔다
+        for k, v in names.items():
+            name_of.setdefault(k, v)
+        for k, v in sectors.items():
+            sector_of.setdefault(k, v)
+
+    if not codes:
+        raise krx_client.KrxError("종목 목록을 얻지 못했다 — KRX 로그인을 확인하라")
 
     # 일괄 조회에서 누락된 종목만 개별 보충한다
-    missing = [code for code in codes if not name_of.get(code)]
-    for code in missing:
+    missing = [c for c in codes if not name_of.get(c)]
+    for code in missing[:50]:  # 과다 보충은 시간만 먹는다. 50개를 넘으면 조회 자체를 의심한다
         fetched = krx_client.get_ticker_name(code)
         if fetched:
             name_of[code] = fetched
@@ -122,7 +136,7 @@ def fetch_universe(date: str) -> list[Ticker]:
     return build_universe(
         codes=codes,
         name_of=name_of,
-        kospi_codes=kospi_codes or set(codes),
+        kospi_codes=kospi_codes,
         sector_of=sector_of,
     )
 

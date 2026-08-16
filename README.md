@@ -2,7 +2,7 @@
 
 > 🇰🇷 [한국어 README](README_KO.md) · 🔗 **[Live demo](https://krx-stock-charts.vercel.app)**
 
-Three years of daily, weekly, and monthly candlestick data for the KOSPI 200,
+Three years of daily, weekly, and monthly candlestick data for **every KOSPI and KOSDAQ listing**,
 collected from the Korea Exchange and served through a Next.js dashboard.
 
 The collection pipeline pulls daily bars from KRX, pre-computes the weekly and
@@ -21,8 +21,8 @@ the database schema.
 | M4 | Candlestick charts (lightweight-charts) | ✅ Done |
 | M5 | Deployment, security review | ✅ Done |
 
-Currently stored: **182,307 rows** across 200 tickers — 144,028 daily,
-30,976 weekly, 7,303 monthly, spanning 2023-08-14 to 2026-08-14 (46 MB).
+Currently stored: **2,412,261 rows** across **2,763 tickers** (KOSPI 942 + KOSDAQ 1,821) —
+1,905,612 daily, 409,898 weekly, 96,751 monthly, spanning 2023-08-14 to 2026-08-14 (267 MB).
 
 ## Screenshots
 
@@ -41,7 +41,7 @@ monthly bars would span ten years.
 
 ## Features
 
-- **Three-year backfill** of KOSPI 200 constituents, using adjusted prices so
+- **Three-year backfill** of all 2,763 listings, using adjusted prices so
   splits and rights issues don't distort the chart.
 - **Pre-computed weekly and monthly bars.** The resampling lives in one place
   (Python), so there is no second implementation to drift out of sync.
@@ -67,7 +67,7 @@ monthly bars would span ten years.
 | Storage | Supabase (PostgreSQL), tables prefixed `ksc_` |
 | Automation | GitHub Actions (weekdays, 18:00 KST) |
 | Web | Next.js 16, TypeScript, Tailwind CSS, lightweight-charts |
-| Tests | pytest (96), Vitest (72) |
+| Tests | pytest (110), Vitest (78) |
 
 ## Setup
 

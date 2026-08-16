@@ -23,7 +23,9 @@ create table if not exists ksc_tickers (
 -- ─────────────────────────────────────────────
 create table if not exists ksc_bars (
   ticker     text not null references ksc_tickers(ticker) on delete cascade,
-  timeframe  text not null,
+  -- 1바이트 코드로 저장한다(D/W/M). 249만 행 규모에서 문자열을 그대로 두면
+  -- 본체와 PK 인덱스 양쪽에 5바이트씩 낭비된다.
+  timeframe  "char" not null,
   d          date not null,
   o          integer not null,  -- 시가 (원)
   h          integer not null,  -- 고가
@@ -36,15 +38,17 @@ create table if not exists ksc_bars (
 
   primary key (ticker, timeframe, d),
 
-  constraint ksc_bars_timeframe check (timeframe in ('daily', 'weekly', 'monthly')),
+  constraint ksc_bars_timeframe check (timeframe in ('D', 'W', 'M')),
 
   -- 정합성을 DB가 직접 강제한다. validate.py가 놓쳐도 오염된 행은 저장되지 않는다.
   constraint ksc_bars_positive check (o > 0 and h > 0 and l > 0 and c > 0 and v >= 0 and (a is null or a >= 0)),
   constraint ksc_bars_ohlc_order check (h >= greatest(o, c) and l <= least(o, c) and h >= l)
 );
 
--- 차트 조회 패턴: 특정 종목·주기의 최근 N봉을 날짜 역순으로 읽는다.
-create index if not exists ksc_bars_lookup on ksc_bars (ticker, timeframe, d desc);
+-- 조회용 별도 인덱스는 두지 않는다.
+-- PK (ticker, timeframe, d)를 PostgreSQL이 역방향 스캔하므로 `order by d desc`가 그대로 처리된다
+-- (EXPLAIN으로 확인: Index Scan Backward using ksc_bars_pkey, 비용 동일).
+-- 중복 인덱스는 전 종목 기준 100MB 이상을 낭비한다.
 
 -- ─────────────────────────────────────────────
 -- 실행 메타 (데이터 기준일·행 수·마지막 갱신 결과)

@@ -84,6 +84,17 @@ describe("TickerRail", () => {
     expect(selected[0]).toHaveTextContent("SK하이닉스");
   });
 
+  it("reports the filtered list so the parent can load only what is shown", () => {
+    const onVisibleChange = vi.fn();
+    render(
+      <TickerRail tickers={TICKERS} selected="005930" onSelect={noop} onVisibleChange={onVisibleChange} />,
+    );
+    expect(onVisibleChange).toHaveBeenCalledWith(["005930", "000660", "0126Z0"]);
+
+    fireEvent.change(screen.getByLabelText("종목 검색"), { target: { value: "하이닉스" } });
+    expect(onVisibleChange).toHaveBeenLastCalledWith(["000660"]);
+  });
+
   it("calls onSelect with the clicked ticker", () => {
     const onSelect = vi.fn();
     render(<TickerRail tickers={TICKERS} selected="005930" onSelect={onSelect} />);
@@ -93,7 +104,7 @@ describe("TickerRail", () => {
 
   it("shows the match count while searching and the total otherwise", () => {
     render(<TickerRail tickers={TICKERS} selected="005930" onSelect={noop} />);
-    expect(screen.getByText("KOSPI200 3종목")).toBeInTheDocument();
+    expect(screen.getByText("KOSPI·KOSDAQ 3종목")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("종목 검색"), { target: { value: "삼성" } });
     expect(screen.getByText("2종목 검색됨")).toBeInTheDocument();
   });

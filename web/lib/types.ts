@@ -10,6 +10,19 @@ export type Timeframe = "daily" | "weekly" | "monthly";
 
 export const TIMEFRAMES: readonly Timeframe[] = ["daily", "weekly", "monthly"];
 
+/**
+ * DB에 저장되는 1바이트 코드.
+ *
+ * 249만 행 규모에서 "daily"를 그대로 두면 본체와 PK 인덱스 양쪽에 5바이트씩 낭비된다.
+ * 화면 코드는 읽기 좋은 이름을 쓰고, 조회 경계에서만 코드로 바꾼다.
+ * `pipeline/models.py`의 `TIMEFRAME_CODE`와 짝을 이룬다 — 한쪽만 고치면 안 된다.
+ */
+export const TIMEFRAME_CODE: Record<Timeframe, string> = {
+  daily: "D",
+  weekly: "W",
+  monthly: "M",
+};
+
 /** 주기별 한글 이름 (화면 표시용). */
 export const TIMEFRAME_LABEL: Record<Timeframe, string> = {
   daily: "일봉",

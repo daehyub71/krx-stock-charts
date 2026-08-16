@@ -7,9 +7,32 @@
 import { fetchAllPages, PAGE_SIZE } from "@/lib/paginate";
 import { BARS_TABLE, getSupabase, TICKERS_TABLE } from "@/lib/supabase";
 import { warmupCount } from "@/lib/indicators";
-import { RANGE_BARS, type Bar, type RangeKey, type Ticker, type Timeframe } from "@/lib/types";
+import {
+  RANGE_BARS,
+  TIMEFRAME_CODE,
+  type Bar,
+  type RangeKey,
+  type Ticker,
+  type Timeframe,
+} from "@/lib/types";
 
 const BAR_COLUMNS = "d,o,h,l,c,v,a";
+
+/**
+ * 한 번의 `.in()` 조회에 넣을 티커 수 상한.
+ *
+ * supabase-js는 `.in()` 값을 **쿼리 문자열**에 넣는다. 전 종목 2,763개를 한 번에 보내면
+ * URL이 약 19KB가 되어 서버가 **400 Bad Request**로 거절한다 (전 종목 확장 후 실제 발생).
+ * 티커 하나가 약 7바이트이므로 300개면 2KB 남짓으로 안전하다.
+ */
+export const SPARKLINE_TICKER_CHUNK = 300;
+
+/** 배열을 고정 크기 그룹으로 나눈다. */
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 
 /**
  * 종목 목록을 티커 오름차순으로 읽는다.
@@ -53,7 +76,7 @@ export async function loadBars(
         .from(BARS_TABLE)
         .select(BAR_COLUMNS)
         .eq("ticker", ticker)
-        .eq("timeframe", timeframe)
+        .eq("timeframe", TIMEFRAME_CODE[timeframe])
         .order("d", { ascending: false }),
     need,
   );
@@ -78,15 +101,22 @@ export async function loadSparklines(
   if (tickers.length === 0) return new Map();
 
   const sb = getSupabase();
-  const rows = await fetchAllPages<{ ticker: string; d: string; c: number }>(() =>
-    sb
-      .from(BARS_TABLE)
-      .select("ticker,d,c")
-      .eq("timeframe", timeframe)
-      .in("ticker", tickers as string[])
-      .order("ticker")
-      .order("d", { ascending: false }),
+  const groups = chunk(tickers, SPARKLINE_TICKER_CHUNK);
+
+  const pages = await Promise.all(
+    groups.map((group) =>
+      fetchAllPages<{ ticker: string; d: string; c: number }>(() =>
+        sb
+          .from(BARS_TABLE)
+          .select("ticker,d,c")
+          .eq("timeframe", TIMEFRAME_CODE[timeframe])
+          .in("ticker", group as string[])
+          .order("ticker")
+          .order("d", { ascending: false }),
+      ),
+    ),
   );
+  const rows = pages.flat();
 
   const out = new Map<string, number[]>();
   for (const r of rows) {

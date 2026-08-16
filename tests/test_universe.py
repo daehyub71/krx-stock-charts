@@ -54,7 +54,7 @@ class TestNormalizeName:
 
 
 class TestBuildUniverse:
-    """구성종목 목록 → Ticker 리스트 조립."""
+    """전 종목 목록 → Ticker 리스트 조립."""
 
     def test_builds_tickers_with_names_and_market(self) -> None:
         result = build_universe(
@@ -115,6 +115,19 @@ class TestBuildUniverse:
         )
         markets = {t.ticker: t.market for t in result}
         assert markets == {"005930": "KOSPI", "247540": "KOSDAQ"}
+
+    def test_handles_full_market_scale(self) -> None:
+        """전 종목(약 2,763개) 규모에서도 정렬·중복 제거가 유지된다."""
+        codes = [f"{i:06d}" for i in range(3000)]
+        result = build_universe(
+            codes=codes + codes[:500],  # 중복 500개 섞음
+            name_of={c: f"종목{c}" for c in codes},
+            kospi_codes=set(codes[:900]),
+            sector_of={},
+        )
+        assert len(result) == 3000
+        assert [t.ticker for t in result] == sorted(codes)
+        assert sum(1 for t in result if t.market == "KOSPI") == 900
 
     def test_missing_sector_becomes_empty_string(self) -> None:
         result = build_universe(

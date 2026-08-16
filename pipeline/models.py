@@ -13,6 +13,12 @@ Timeframe = Literal["daily", "weekly", "monthly"]
 
 TIMEFRAMES: tuple[Timeframe, ...] = ("daily", "weekly", "monthly")
 
+# DB에는 1바이트 코드로 저장한다. 249만 행 규모에서 'daily'(6바이트)를 그대로 두면
+# 본체와 PK 인덱스 양쪽에 5바이트씩 낭비된다 — 전 종목 기준 수십 MB 차이다.
+# 코드 안에서는 계속 읽기 좋은 이름을 쓰고, 저장 경계에서만 변환한다.
+TIMEFRAME_CODE: dict[Timeframe, str] = {"daily": "D", "weekly": "W", "monthly": "M"}
+CODE_TIMEFRAME: dict[str, Timeframe] = {v: k for k, v in TIMEFRAME_CODE.items()}
+
 
 @dataclass(frozen=True, slots=True)
 class Ticker:

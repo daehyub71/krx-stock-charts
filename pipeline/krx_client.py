@@ -21,6 +21,12 @@ T = TypeVar("T")
 # 보정하지 않고 validate가 잡도록 그대로 둔다.
 ROUNDING_TOLERANCE_WON = 1
 
+# 우선주·스팩 등 저유동성 종목에서는 오차가 호가단위 수준(5~50원)까지 벌어진다.
+# 2023-08~2026-08 · 전 종목 2,763개 실측에서 최대 상대오차는 **0.4975%**였다
+# (000215 DL우, 38380K LX홀딩스1우 등 13건). 절대값이 아니라 종가 대비 비율로 잡는다.
+# 이보다 큰 어긋남은 호가·반올림으로 설명되지 않으므로 보정하지 않고 validate가 잡게 둔다.
+OHLC_TOLERANCE_RATIO = 0.01
+
 
 class KrxError(RuntimeError):
     """KRX 조회 실패를 나타내는 정규화된 예외."""
@@ -173,11 +179,15 @@ def normalize_ohlc(
 
     두 가지 실제 데이터 특성을 처리한다.
 
-    1. **거래정지일**: KRX는 시·고·저가를 0으로 주고 종가에 직전 값을 유지한다(거래량 0).
-       종가 기준 보합 봉으로 만든다 — 날짜 구멍을 남기지 않고, 마지막 알려진 가격을 보존한다.
-    2. **수정주가 반올림**: 고가가 시가/종가보다 1원 낮게 나오는 경우가 있다.
-       `ROUNDING_TOLERANCE_WON` 이내일 때만 맞춰주고, 그보다 크면 손대지 않는다
-       (반올림으로 설명되지 않는 값은 validate가 오류로 잡아야 한다).
+    1. **종가만 있는 봉**: KRX는 거래정지일이나 장중 범위가 보고되지 않은 날에
+       시·고·저가를 0으로 주고 종가만 채운다. 거래량이 0인 날(거래정지)도 있고
+       거래량이 있는 날도 있다(실측 1건: 010780 2026-08-13, 거래량 199,329).
+       어느 쪽이든 **종가 기준 보합 봉**으로 만든다 — 날짜 구멍을 남기지 않으면서
+       "종가는 알지만 장중 범위는 모른다"를 봉으로 표현할 수 있는 최선이다.
+    2. **고가·저가 역전**: 수정주가 반올림(1원)이나 저유동성 종목의 호가단위 수준
+       (5~50원, 종가 대비 최대 0.4975%)으로 고가가 종가보다 낮게 나온다.
+       고가는 정의상 종가보다 낮을 수 없으므로, **KRX가 준 값 안에서** 맞춰 준다.
+       허용치를 넘으면 손대지 않는다 — validate가 오류로 잡아야 한다.
 
     Args:
         o: 시가. h: 고가. low: 저가. c: 종가. v: 거래량.
@@ -189,17 +199,20 @@ def normalize_ohlc(
         # 상장 전 구간 — 봉이 아니다.
         return None
 
-    if v == 0 and o == 0 and h == 0 and low == 0:
-        return (c, c, c, c, 0)
+    if o == 0 and h == 0 and low == 0:
+        # 종가만 보고된 날. 거래량은 있는 그대로 보존한다.
+        return (c, c, c, c, v)
 
     if min(o, h, low) <= 0:
-        # 설명되지 않는 0값 — 그대로 넘겨 validate가 잡게 한다.
+        # 일부만 0인 경우는 설명되지 않는다 — 그대로 넘겨 validate가 잡게 한다.
         return (o, h, low, c, v)
 
+    # 절대 허용치(반올림)와 비율 허용치(호가단위) 중 큰 쪽을 쓴다.
+    tolerance = max(ROUNDING_TOLERANCE_WON, c * OHLC_TOLERANCE_RATIO)
     hi_need, lo_need = max(o, c), min(o, c)
-    if 0 < hi_need - h <= ROUNDING_TOLERANCE_WON:
+    if 0 < hi_need - h <= tolerance:
         h = hi_need
-    if 0 < low - lo_need <= ROUNDING_TOLERANCE_WON:
+    if 0 < low - lo_need <= tolerance:
         low = lo_need
 
     return (o, h, low, c, v)
