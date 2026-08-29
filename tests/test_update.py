@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from pipeline.models import Bar
@@ -70,3 +72,50 @@ class TestDetectDrift:
     def test_empty_inputs_are_safe(self) -> None:
         assert detect_drift([], []) is False
         assert detect_drift([bar("2026-08-14")], []) is False
+
+
+# ── F8 시가총액 갱신 — 봉 갱신과 분리된 보조 단계 (v2.1) ──────────
+
+from datetime import date as _date  # noqa: E402
+
+from pipeline import krx_client as _krx  # noqa: E402
+from pipeline import store as _store  # noqa: E402
+from pipeline import update as _update  # noqa: E402
+from pipeline.models import MarketCap, Ticker  # noqa: E402
+
+_CAPS = {"005930": MarketCap(mktcap=100, list_shrs=10), "000660": MarketCap(mktcap=50, list_shrs=5)}
+
+
+_METAS = [
+    Ticker(ticker="005930", name="삼성전자", market="KOSPI", sector=""),
+    Ticker(ticker="999999", name="시총없음", market="KOSPI", sector=""),
+]
+
+
+def test_update_market_caps_saves_known_tickers(monkeypatch: Any) -> None:
+    """pykrx는 전 종목을 주지만 ksc_tickers에 있는 종목만 저장된다 (market_cap_rows가 거른다)."""
+    saved: dict[str, Any] = {}
+    monkeypatch.setattr(_krx, "get_market_caps", lambda d: _CAPS)
+
+    def fake_upsert(c: Any, tickers: Any, caps: dict[str, MarketCap], d: Any) -> int:
+        saved.update({"tickers": tickers, "caps": caps, "d": d})
+        return sum(1 for t in tickers if t.ticker in caps)
+
+    monkeypatch.setattr(_store, "upsert_market_caps", fake_upsert)
+    n = _update.update_market_caps(object(), "20260827", _METAS)
+    assert n == 1 and saved["d"] == _date(2026, 8, 27) and saved["tickers"] == _METAS
+
+
+def test_update_market_caps_returns_zero_when_krx_fails(monkeypatch: Any) -> None:
+    """시총은 보조 정보다 — 실패해도 예외를 올리지 않는다 (봉 갱신은 이미 끝났다)."""
+
+    def boom(d: str) -> dict[str, MarketCap]:
+        raise _krx.KrxError("시총 조회 실패")
+
+    monkeypatch.setattr(_krx, "get_market_caps", boom)
+    assert _update.update_market_caps(object(), "20260827", _METAS) == 0
+
+
+def test_update_market_caps_empty_result_is_zero(monkeypatch: Any) -> None:
+    monkeypatch.setattr(_krx, "get_market_caps", lambda d: {})
+    assert _update.update_market_caps(object(), "20260827", _METAS) == 0

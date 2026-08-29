@@ -156,7 +156,8 @@ def run_update(date: str) -> int:
         print(f"오류: Supabase 연결 실패: {exc}", file=sys.stderr)
         return 1
 
-    tickers = [t.ticker for t in store.fetch_all_tickers(client)]
+    all_tickers = store.fetch_all_tickers(client)
+    tickers = [t.ticker for t in all_tickers]
     if not tickers:
         print("오류: ksc_tickers가 비어 있습니다. 먼저 --universe 를 실행하세요.", file=sys.stderr)
         return 1
@@ -185,6 +186,9 @@ def run_update(date: str) -> int:
             result.warnings.append(f"{ticker} 재백필 실패: {exc}")
     result.drifted = drifted
 
+    # 시가총액·상장주식수 (F8, v2.1) — 호출 1회. 실패해도 봉 갱신은 성공이다.
+    caps_written = update.update_market_caps(client, date, all_tickers)
+
     store.set_meta(
         client,
         "update",
@@ -197,6 +201,7 @@ def run_update(date: str) -> int:
                 "weekly": result.weekly_written,
                 "monthly": result.monthly_written,
             },
+            "marketCaps": caps_written,
             "refetched": drifted,
         },
     )
@@ -204,6 +209,8 @@ def run_update(date: str) -> int:
     print(f"  일봉 갱신   : {result.daily_written}행 ({result.updated_tickers}종목)")
     print(f"  주봉 재계산 : {result.weekly_written}행")
     print(f"  월봉 재계산 : {result.monthly_written}행")
+    cap_note = "" if caps_written else " (수집 실패 — 봉은 정상)"
+    print(f"  시가총액    : {caps_written}종목{cap_note}")
     if drifted:
         print(f"  수정주가 변경 : {len(drifted)}종목 재백필 {drifted[:5]}")
     if result.missing:

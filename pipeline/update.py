@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from pipeline import krx_client, resample, store, validate
-from pipeline.models import Bar
+from pipeline.models import Bar, Ticker
 
 # 수정주가 소급 변경을 감지할 때 대조할 최근 거래일 수 (SPEC §6)
 DRIFT_CHECK_BARS = 20
@@ -76,6 +76,36 @@ def detect_drift(stored: Sequence[Bar], fresh: Sequence[Bar]) -> bool:
         if other is not None and other != b.close:
             return True
     return False
+
+
+def update_market_caps(
+    client: store.SupabaseLike,
+    day: str,
+    tickers: Sequence[Ticker],
+) -> int:
+    """시가총액·상장주식수를 갱신한다 (SPEC F8, v2.1). 호출 1회.
+
+    **보조 정보다** — 실패해도 예외를 올리지 않는다. 봉 갱신은 이미 끝났고,
+    시총이 하루 비는 것보다 워크플로가 실패해 다음 단계가 멈추는 편이 나쁘다.
+    pykrx는 전 종목(약 2,875)을 주지만 `ksc_tickers`에 있는 종목만 저장한다.
+
+    Args:
+        client: Supabase 클라이언트.
+        day: 기준일 ("YYYYMMDD").
+        tickers: 대상 종목 메타 (DB에서 읽은 것 — upsert가 name을 덮어쓰지 않게 함께 보낸다).
+
+    Returns:
+        저장한 행 수. 실패하거나 대상이 없으면 0.
+    """
+    try:
+        caps = krx_client.get_market_caps(day)
+    except krx_client.KrxError as exc:
+        print(f"  시가총액 갱신 실패(무시): {exc}")
+        return 0
+    if not caps:
+        return 0
+    basis = date(int(day[:4]), int(day[4:6]), int(day[6:]))
+    return store.upsert_market_caps(client, tickers, caps, basis)
 
 
 def update_day(

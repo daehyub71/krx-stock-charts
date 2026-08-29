@@ -47,6 +47,21 @@ class Ticker:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketCap:
+    """종목 하나의 시가총액·상장주식수 (SPEC F8, v2.1).
+
+    당일 값만 쓴다 — 과거 시계열은 저장하지 않는다. 기준일은 저장할 때 함께 넣는다.
+
+    Attributes:
+        mktcap: 시가총액 (원).
+        list_shrs: 상장주식수 (주).
+    """
+
+    mktcap: int
+    list_shrs: int
+
+
+@dataclass(frozen=True, slots=True)
 class Bar:
     """하나의 봉(캔들).
 

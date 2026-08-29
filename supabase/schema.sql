@@ -17,6 +17,16 @@ create table if not exists ksc_tickers (
   constraint ksc_tickers_code_format check (ticker ~ '^[0-9A-Z]{6}$')
 );
 
+-- ── 마이그레이션 ──────────────────────────────
+-- `create table if not exists`는 이미 있는 테이블에 열을 추가하지 않는다.
+-- 열을 늘릴 때는 반드시 여기에 alter를 한 줄 더한다.
+
+-- v2.1 (2026-08-29) F8 — 시가총액·상장주식수. 당일 값만 유지한다(과거 시계열 없음).
+-- 하위 krx-signal-briefing이 브리핑 메일의 시세 참고에 읽는다. null = 아직 수집 전.
+alter table ksc_tickers add column if not exists mktcap    bigint;
+alter table ksc_tickers add column if not exists list_shrs bigint;
+alter table ksc_tickers add column if not exists mktcap_d  date;
+
 -- ─────────────────────────────────────────────
 -- 봉 데이터 (SPEC F2·F4) — 일/주/월봉을 한 테이블에 timeframe으로 구분
 -- 주봉·월봉의 d는 해당 구간의 마지막 거래일이다.

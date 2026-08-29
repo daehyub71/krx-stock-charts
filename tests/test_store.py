@@ -54,8 +54,12 @@ class PagedRange:
         size = min(self._end - self._start + 1, self.CAP)
         n = max(0, min(size, self._total - self._start))
         rows = [
-            {"ticker": f"{self._start + i:06d}", "name": f"종목{i}",
-             "market": "KOSPI", "sector": ""}
+            {
+                "ticker": f"{self._start + i:06d}",
+                "name": f"종목{i}",
+                "market": "KOSPI",
+                "sector": "",
+            }
             for i in range(n)
         ]
         return type("R", (), {"data": rows})()
@@ -177,3 +181,66 @@ class TestFetchAllTickers:
         client = PagedClient(total=2)
         out = fetch_all_tickers(client)
         assert out[0].ticker == "000000" and out[0].market in ("KOSPI", "KOSDAQ")
+
+
+# ── F8 시가총액·상장주식수 (v2.1) ─────────────────────────────────
+
+from datetime import date  # noqa: E402
+
+from pipeline.models import MarketCap  # noqa: E402
+from pipeline.store import market_cap_rows, upsert_market_caps  # noqa: E402
+
+CAPS = {
+    "005930": MarketCap(mktcap=1_555_110_109_728_000, list_shrs=5_846_278_608),
+    "079940": MarketCap(mktcap=611_312_156_200, list_shrs=13_420_684),
+}
+
+
+
+TICKER_METAS = [
+    Ticker(ticker="005930", name="삼성전자", market="KOSPI", sector="전기전자"),
+    Ticker(ticker="079940", name="가비아", market="KOSDAQ", sector="서비스"),
+    Ticker(ticker="999999", name="시총없음", market="KOSPI", sector=""),
+]
+
+
+def test_market_cap_rows_carry_meta_and_basis_date() -> None:
+    """PostgREST upsert는 행 전체를 다시 쓴다 — 메타를 빼면 name이 null이 된다 (2026-08-29 실측)."""
+    rows = market_cap_rows(TICKER_METAS, CAPS, date(2026, 8, 27))
+    assert rows[0] == {
+        "ticker": "005930",
+        "name": "삼성전자",
+        "market": "KOSPI",
+        "sector": "전기전자",
+        "mktcap": 1_555_110_109_728_000,
+        "list_shrs": 5_846_278_608,
+        "mktcap_d": "2026-08-27",
+    }
+    assert [r["ticker"] for r in rows] == ["005930", "079940"]  # 시총 없는 종목은 빠진다
+
+
+def test_market_cap_rows_empty_safe() -> None:
+    assert market_cap_rows(TICKER_METAS, {}, date(2026, 8, 27)) == []
+    assert market_cap_rows([], CAPS, date(2026, 8, 27)) == []
+
+
+def test_upsert_market_caps_sends_full_rows() -> None:
+    client = FakeClient()
+    assert upsert_market_caps(client, TICKER_METAS, CAPS, date(2026, 8, 27)) == 2
+    assert client.calls[0]["table"] == TICKERS_TABLE
+    assert client.calls[0]["kwargs"].get("on_conflict") == "ticker"
+    assert set(client.calls[0]["rows"][0]) == {
+        "ticker",
+        "name",
+        "market",
+        "sector",
+        "mktcap",
+        "list_shrs",
+        "mktcap_d",
+    }
+
+
+def test_upsert_market_caps_noop_when_empty() -> None:
+    client = FakeClient()
+    assert upsert_market_caps(client, TICKER_METAS, {}, date(2026, 8, 27)) == 0
+    assert client.calls == []

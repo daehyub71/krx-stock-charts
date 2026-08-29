@@ -10,10 +10,11 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from datetime import date
 from typing import Any, Protocol
 
-from pipeline.models import TIMEFRAME_CODE, Bar, Ticker, Timeframe
+from pipeline.models import TIMEFRAME_CODE, Bar, MarketCap, Ticker, Timeframe
 
 TICKERS_TABLE = "ksc_tickers"
 BARS_TABLE = "ksc_bars"
@@ -112,6 +113,62 @@ def upsert_tickers(
         저장한 행 수.
     """
     rows = ticker_rows(tickers)
+    for batch in chunked(rows, batch_size):
+        client.table(TICKERS_TABLE).upsert(batch, on_conflict="ticker").execute()
+    return len(rows)
+
+
+def market_cap_rows(
+    tickers: Sequence[Ticker], caps: Mapping[str, MarketCap], basis: date
+) -> list[dict[str, Any]]:
+    """종목 메타 + 시가총액을 `ksc_tickers` 행으로 합친다 (SPEC F8).
+
+    **메타를 함께 담아야 한다.** PostgREST의 upsert는 부분 갱신이 아니라 행 전체를 다시 쓰므로,
+    시총 열만 보내면 `name`이 null이 되어 not-null 제약에 걸린다 (2026-08-29 실측).
+
+    Args:
+        tickers: DB에서 읽은 현재 종목 메타.
+        caps: {티커: MarketCap}. 여기 없는 종목은 결과에서 빠진다.
+        basis: 시총 기준일.
+
+    Returns:
+        티커 오름차순 행 목록. 시총이 있는 종목만.
+    """
+    return [
+        {
+            "ticker": t.ticker,
+            "name": t.name,
+            "market": t.market,
+            "sector": t.sector,
+            "mktcap": caps[t.ticker].mktcap,
+            "list_shrs": caps[t.ticker].list_shrs,
+            "mktcap_d": basis.isoformat(),
+        }
+        for t in sorted(tickers, key=lambda x: x.ticker)
+        if t.ticker in caps
+    ]
+
+
+def upsert_market_caps(
+    client: SupabaseLike,
+    tickers: Sequence[Ticker],
+    caps: Mapping[str, MarketCap],
+    basis: date,
+    batch_size: int = DEFAULT_BATCH,
+) -> int:
+    """시가총액·상장주식수를 저장한다 (멱등, SPEC F8).
+
+    Args:
+        client: Supabase 클라이언트.
+        tickers: DB에서 읽은 현재 종목 메타 (upsert가 덮어쓰지 않게 함께 보낸다).
+        caps: {티커: MarketCap}.
+        basis: 시총 기준일.
+        batch_size: 한 요청에 보낼 최대 행 수.
+
+    Returns:
+        저장한 행 수.
+    """
+    rows = market_cap_rows(tickers, caps, basis)
     for batch in chunked(rows, batch_size):
         client.table(TICKERS_TABLE).upsert(batch, on_conflict="ticker").execute()
     return len(rows)

@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from pipeline import config
-from pipeline.models import Bar
+from pipeline.models import Bar, MarketCap
 
 T = TypeVar("T")
 
@@ -262,6 +262,43 @@ def get_ohlcv(ticker: str, fromdate: str, todate: str) -> list[Bar]:
 
     bars.sort(key=lambda b: b.date)
     return bars
+
+
+def get_market_caps(date: str, market: str = "ALL") -> dict[str, MarketCap]:
+    """하루치 전 종목 시가총액·상장주식수를 **한 번의 호출**로 조회한다 (SPEC F8, v2.1).
+
+    종목마다 부르면 2,800회가 되지만 이 경로는 1회로 끝난다.
+    응답 열: 종가·시가총액·거래량·거래대금·상장주식수 (2026-08-29 실측).
+
+    Args:
+        date: 조회일 ("YYYYMMDD").
+        market: "ALL" / "KOSPI" / "KOSDAQ".
+
+    Returns:
+        {티커: MarketCap}. 휴장일이면 빈 dict.
+
+    Raises:
+        KrxError: 재시도 후에도 조회에 실패한 경우.
+    """
+    df = _retry(
+        lambda: _stock().get_market_cap_by_ticker(date, market),
+        what=f"{date} 전종목 시가총액 조회",
+    )
+    time.sleep(config.REQUEST_DELAY)
+
+    if df is None or not hasattr(df, "empty") or df.empty:
+        return {}
+    if "시가총액" not in df.columns or "상장주식수" not in df.columns:
+        raise KrxError(f"{date} 시가총액 응답에 필요한 열이 없다: {list(df.columns)}")
+
+    out: dict[str, MarketCap] = {}
+    for ticker, row in df.iterrows():
+        code = str(ticker)
+        cap, shrs = int(row["시가총액"]), int(row["상장주식수"])
+        if cap <= 0 or shrs <= 0:  # 거래정지·상장폐지 예정 종목은 0으로 온다
+            continue
+        out[code] = MarketCap(mktcap=cap, list_shrs=shrs)
+    return out
 
 
 def get_ohlcv_by_date(date: str, market: str = "ALL") -> dict[str, Bar]:
