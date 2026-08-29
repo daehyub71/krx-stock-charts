@@ -57,6 +57,10 @@ monthly bars would span ten years.
   blocks every write path — verified against the live database, not assumed.
 - **Turnover as well as volume.** The bottom pane switches between the two; turnover
   is comparable across price levels, which raw share count is not.
+- **Market cap kept current.** The daily update also stores 시가총액 and 상장주식수 per
+  ticker (one extra pykrx call for the whole market), with the basis date alongside —
+  today's value only, no historical series. `krx-signal-briefing` reads it for the
+  market-cap line in its briefing mail.
 - **Charts that stay readable.** Volume sits in its own pane, moving averages are
   drawn from a warmup-extended series so lines start at the first visible bar, and
   arrow keys walk the bars for keyboard users.
@@ -69,7 +73,7 @@ monthly bars would span ten years.
 | Storage | Supabase (PostgreSQL), tables prefixed `ksc_` |
 | Automation | GitHub Actions (weekdays, 18:00 KST) |
 | Web | Next.js 16, TypeScript, Tailwind CSS, lightweight-charts |
-| Tests | pytest (122), Vitest (93) |
+| Tests | pytest (129), Vitest (93) |
 
 ## Setup
 
@@ -110,6 +114,7 @@ python -m pipeline.main --universe                 # refresh the ticker list
 python -m pipeline.main --backfill                 # three-year backfill (~3 min)
 python -m pipeline.main --backfill --limit 5       # trial run on a few tickers
 python -m pipeline.main --update                   # today's incremental update
+                                                   #   (bars + market cap, 2 KRX calls)
 python -m pipeline.main --update --date 20260814   # a specific trading day
 ```
 

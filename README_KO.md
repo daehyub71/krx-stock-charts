@@ -47,6 +47,9 @@
   가정이 아니라 실제 DB에 쓰기를 시도해 차단을 확인했다.
 - **거래량과 거래대금 둘 다** — 하단 pane에서 전환한다. 거래대금은 가격대가 다른 종목끼리
   비교가 되지만 거래량(주)은 안 된다.
+- **시가총액을 최신으로 유지** — 일일 갱신 때 종목별 시가총액·상장주식수를 함께 저장한다
+  (전 종목을 pykrx 호출 1회로). 기준일을 함께 남기며 **당일 값만** 두고 과거 시계열은 없다.
+  `krx-signal-briefing`이 브리핑 메일의 시총 표시에 읽는다.
 - **읽히는 차트** — 거래량은 별도 pane에 두고, 이동평균은 워밍업을 포함한 계열로 계산해
   표시 첫 봉부터 선이 그려진다. 방향키로 봉을 훑을 수 있다.
 
@@ -58,7 +61,7 @@
 | 저장 | Supabase (PostgreSQL), 테이블 접두어 `ksc_` |
 | 자동화 | GitHub Actions (평일 18:00 KST) |
 | 웹 | Next.js 16, TypeScript, Tailwind CSS, lightweight-charts |
-| 테스트 | pytest 122개, Vitest 93개 |
+| 테스트 | pytest 129개, Vitest 93개 |
 
 ## 설치
 
@@ -98,6 +101,7 @@ python -m pipeline.main --universe                 # 종목 리스트 갱신
 python -m pipeline.main --backfill                 # 3년 백필 (약 3분)
 python -m pipeline.main --backfill --limit 5       # 소수 종목 시험 실행
 python -m pipeline.main --update                   # 당일 증분 갱신
+                                                   #   (봉 + 시가총액, KRX 호출 2회)
 python -m pipeline.main --update --date 20260814   # 특정 거래일
 ```
 
