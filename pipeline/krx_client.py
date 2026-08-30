@@ -139,7 +139,10 @@ def diagnose_login() -> None:
             f"type={warm.headers.get('content-type')} {time.time() - t0:.1f}s",
             file=sys.stderr,
         )
-        payload = {"mbrNm": "", "telNo": "", "di": "", "certType": "", "mbrId": login_id, "pw": login_pw}
+        payload = {
+            "mbrNm": "", "telNo": "", "di": "", "certType": "",
+            "mbrId": login_id, "pw": login_pw,
+        }
         resp = session.post(
             auth.LOGIN_URL,
             data=payload,
