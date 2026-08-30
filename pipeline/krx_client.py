@@ -6,6 +6,7 @@ KRX 호출은 간헐적으로 빈 응답을 반환하므로 재시도와 딜레�
 
 from __future__ import annotations
 
+import sys
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
@@ -105,11 +106,63 @@ def get_market_codes(date: str, market: str) -> set[str]:
             lambda: _stock().get_market_ticker_list(date, market=market),
             what=f"{market} 종목목록 조회",
         )
-    except KrxError:
+    except KrxError as exc:
+        # 원인을 삼키지 않는다 — Actions 로그에서 "왜" 실패했는지 보여야 한다 (2026-08-30)
+        print(f"경고: {exc}", file=sys.stderr)
         return set()
 
     time.sleep(config.REQUEST_DELAY)
     return {str(c) for c in codes}
+
+
+def diagnose_login() -> None:
+    """KRX 로그인 응답을 원시 수준에서 찍는다 — 차단 HTML인지, 타임아웃인지 가르기 위해.
+
+    자격증명·쿠키는 출력하지 않는다. 실패해도 예외를 밖으로 내지 않는다.
+    (2026-08-30: Actions 러너에서만 로그인이 실패해 원인 판별용으로 추가)
+    """
+    import os
+
+    login_id, login_pw = os.getenv("KRX_ID"), os.getenv("KRX_PW")
+    if not (login_id and login_pw):
+        print("진단: KRX_ID/KRX_PW 없음", file=sys.stderr)
+        return
+    try:
+        import requests
+        from pykrx.website.comm import auth
+
+        session = requests.Session()
+        t0 = time.time()
+        warm = session.get(auth.LOGIN_PAGE, headers={"User-Agent": auth.USER_AGENT}, timeout=15)
+        print(
+            f"진단: 로그인 페이지 GET status={warm.status_code} "
+            f"type={warm.headers.get('content-type')} {time.time() - t0:.1f}s",
+            file=sys.stderr,
+        )
+        payload = {"mbrNm": "", "telNo": "", "di": "", "certType": "", "mbrId": login_id, "pw": login_pw}
+        resp = session.post(
+            auth.LOGIN_URL,
+            data=payload,
+            headers={"User-Agent": auth.USER_AGENT, "Referer": auth.LOGIN_PAGE},
+            timeout=15,
+        )
+        body = resp.text[:300].replace("\n", " ")
+        print(
+            f"진단: 로그인 POST status={resp.status_code} "
+            f"type={resp.headers.get('content-type')} bytes={len(resp.content)}",
+            file=sys.stderr,
+        )
+        try:
+            data = resp.json()
+            print(
+                f"진단: JSON _error_code={data.get('_error_code')} "
+                f"msg={str(data.get('_error_message'))[:80]}",
+                file=sys.stderr,
+            )
+        except ValueError:
+            print(f"진단: JSON 아님 — 본문 앞부분: {body}", file=sys.stderr)
+    except Exception as exc:  # noqa: BLE001 — 진단은 어떤 예외도 밖으로 내지 않는다
+        print(f"진단: 예외 {type(exc).__name__}: {str(exc)[:200]}", file=sys.stderr)
 
 
 def get_ticker_name(code: str) -> str:

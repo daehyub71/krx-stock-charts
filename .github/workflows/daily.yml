@@ -50,7 +50,12 @@ jobs:
 
       # 종목 유니버스를 먼저 갱신한다 — KOSPI200 정기 변경으로 편입된 종목을
       # 당일 갱신 대상에 포함시키기 위해서다 (PLAN §6).
+      # 2026-08-30: Actions 러너에서 KRX 로그인이 막혀(08-18~) 이 단계가 실패해도
+      # 시세 수집(로그인 불필요)은 계속 돌게 한다. 종목 목록은 Supabase의 기존 ksc_tickers를 쓴다.
+      # 실패는 단계 상태(주황)로 남기고, 실패 시 진단 로그(응답 status/type)가 stderr에 찍힌다.
       - name: Refresh ticker universe
+        id: universe
+        continue-on-error: true
         env:
           KRX_ID: ${{ secrets.KRX_ID }}
           KRX_PW: ${{ secrets.KRX_PW }}
@@ -62,6 +67,10 @@ jobs:
           else
             python -m pipeline.main --universe
           fi
+
+      - name: Universe result
+        if: steps.universe.outcome == 'failure'
+        run: echo "::warning::종목 목록 갱신 실패 — 기존 ksc_tickers로 증분 갱신을 진행합니다 (진단 로그는 위 단계 참조)"
 
       - name: Incremental update
         env:

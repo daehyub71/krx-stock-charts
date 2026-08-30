@@ -48,6 +48,10 @@ def run_universe(date: str) -> int:
         tickers = universe.fetch_universe(date)
     except KrxError as exc:
         print(f"오류: {exc}", file=sys.stderr)
+        # 2026-08-30: Actions 러너에서만 실패하는 현상 판별용 — 응답 종류를 남긴다
+        from pipeline.krx_client import diagnose_login
+
+        diagnose_login()
         return 1
 
     if not tickers:
