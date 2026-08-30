@@ -11,10 +11,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Mapping, Sequence
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Protocol
 
-from pipeline.models import TIMEFRAME_CODE, Bar, MarketCap, Ticker, Timeframe
+from pipeline.models import TIMEFRAME_CODE, Bar, InvestorFlow, MarketCap, Ticker, Timeframe
 
 TICKERS_TABLE = "ksc_tickers"
 BARS_TABLE = "ksc_bars"
@@ -116,6 +116,82 @@ def upsert_tickers(
     for batch in chunked(rows, batch_size):
         client.table(TICKERS_TABLE).upsert(batch, on_conflict="ticker").execute()
     return len(rows)
+
+
+INVESTOR_FLOWS_TABLE = "ksc_investor_flows"
+
+# 얼마나 보관할지. 하위 프로젝트는 30일을 읽는다 — 넉넉히 두되 무한히 쌓지는 않는다.
+# 2,700행/일 × 120일 ≈ 32만 행. 보존 기간이 없으면 1년에 100만 행이 된다.
+RETENTION_DAYS = 120
+
+
+def investor_flow_rows(
+    flows: Mapping[str, InvestorFlow], day: date
+) -> list[dict[str, Any]]:
+    """`ksc_investor_flows` 행으로 편다 (SPEC F14).
+
+    **None을 0으로 채우지 않는다.** 그 투자자 표에 종목이 없었다는 사실과
+    순매수가 0원이었다는 사실은 다르다.
+
+    Args:
+        flows: {티커: InvestorFlow}.
+        day: 거래일.
+
+    Returns:
+        티커 오름차순 행 목록.
+    """
+    iso = day.isoformat()
+    return [
+        {
+            "d": iso,
+            "ticker": ticker,
+            "inst_net": f.inst_net,
+            "foreign_net": f.foreign_net,
+            "foreign_etc_net": f.foreign_etc_net,
+            "indiv_net": f.indiv_net,
+            "corp_etc_net": f.corp_etc_net,
+        }
+        for ticker, f in sorted(flows.items())
+    ]
+
+
+def upsert_investor_flows(
+    client: SupabaseLike,
+    flows: Mapping[str, InvestorFlow],
+    day: date,
+    batch_size: int = DEFAULT_BATCH,
+) -> int:
+    """투자자별 순매수를 저장한다 (멱등, SPEC F14).
+
+    Args:
+        client: Supabase 클라이언트.
+        flows: {티커: InvestorFlow}.
+        day: 거래일.
+        batch_size: 한 요청에 보낼 최대 행 수.
+
+    Returns:
+        저장한 행 수.
+    """
+    rows = investor_flow_rows(flows, day)
+    for batch in chunked(rows, batch_size):
+        client.table(INVESTOR_FLOWS_TABLE).upsert(batch, on_conflict="d,ticker").execute()
+    return len(rows)
+
+
+def prune_investor_flows(
+    client: SupabaseLike, today: date, keep_days: int = RETENTION_DAYS
+) -> None:
+    """보존 기간을 넘긴 행을 지운다 (SPEC F14).
+
+    쌓기만 하면 1년에 100만 행이 된다. `ksc_bars`가 이미 2.4M행이다.
+
+    Args:
+        client: Supabase 클라이언트.
+        today: 기준일.
+        keep_days: 보관할 일수.
+    """
+    cutoff = (today - timedelta(days=keep_days)).isoformat()
+    client.table(INVESTOR_FLOWS_TABLE).delete().lt("d", cutoff).execute()
 
 
 def market_cap_rows(

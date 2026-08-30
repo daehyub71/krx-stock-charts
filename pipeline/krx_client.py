@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from pipeline import config
-from pipeline.models import Bar, MarketCap
+from pipeline.models import Bar, InvestorFlow, MarketCap
 
 T = TypeVar("T")
 
@@ -318,6 +318,67 @@ def get_ohlcv(ticker: str, fromdate: str, todate: str) -> list[Bar]:
 
     bars.sort(key=lambda b: b.date)
     return bars
+
+
+# 투자자별 순매수 (SPEC F14). pykrx는 이름을 하나씩만 받는다 — 투자자 수만큼 부른다.
+# `외국인합계`는 이 엔드포인트가 받지 않는다(2026-08-30 실측). `외국인`+`기타외국인`으로 만든다.
+INVESTORS: tuple[str, ...] = ("기관합계", "외국인", "기타외국인", "개인", "기타법인")
+MARKETS: tuple[str, ...] = ("KOSPI", "KOSDAQ")
+
+# InvestorFlow의 어느 칸에 담을지 — 투자자 이름과 필드 이름의 대응.
+_FIELD_OF: dict[str, str] = {
+    "기관합계": "inst_net",
+    "외국인": "foreign_net",
+    "기타외국인": "foreign_etc_net",
+    "개인": "indiv_net",
+    "기타법인": "corp_etc_net",
+}
+
+NET_VALUE_COLUMN = "순매수거래대금"
+
+
+def get_investor_flows(date: str, market: str) -> dict[str, InvestorFlow]:
+    """하루치 전 종목 투자자별 순매수거래대금을 모은다 (SPEC F14, v2.2).
+
+    투자자 하나에 한 번씩, 시장 하나당 5회 부른다. 각 호출은 그 시장 전 종목을 준다
+    (KOSDAQ 1,719종목 0.2초 — 2026-08-30 실측). 종목당 1회씩 부르면 2,700회다.
+
+    **하루 단위로 부른다** (`fromdate == todate`). 기간 합계를 받으면 공시 당일 수급을
+    볼 수 없는데, 그것이 이 데이터를 모으는 이유다.
+
+    Args:
+        date: 조회일 ("YYYYMMDD").
+        market: "KOSPI" / "KOSDAQ".
+
+    Returns:
+        {티커: InvestorFlow}. 휴장일이면 빈 dict. 한 투자자 표에만 있는 종목도 남는다
+        (나머지 칸은 None).
+
+    Raises:
+        KrxError: 재시도 후에도 실패했거나, 응답에 순매수거래대금 열이 없는 경우.
+    """
+    merged: dict[str, dict[str, int]] = {}
+    for investor in INVESTORS:
+        # `_retry`는 이 자리에서 바로 부른다 — 늦은 바인딩 문제가 없다.
+        def fetch(inv: str = investor) -> Any:
+            return _stock().get_market_net_purchases_of_equities_by_ticker(
+                date, date, market, inv
+            )
+
+        df = _retry(fetch, what=f"{date} {market} {investor} 순매수 조회")
+        time.sleep(config.REQUEST_DELAY)
+        if df is None or not hasattr(df, "empty") or df.empty:
+            continue
+        if NET_VALUE_COLUMN not in df.columns:
+            raise KrxError(
+                f"{date} {market} {investor} 응답에 '{NET_VALUE_COLUMN}' 열이 없다: "
+                f"{list(df.columns)}"
+            )
+        field = _FIELD_OF[investor]
+        for ticker, row in df.iterrows():
+            merged.setdefault(str(ticker), {})[field] = int(row[NET_VALUE_COLUMN])
+    return {ticker: InvestorFlow(**fields) for ticker, fields in merged.items()}
+
 
 
 def get_market_caps(date: str, market: str = "ALL") -> dict[str, MarketCap]:

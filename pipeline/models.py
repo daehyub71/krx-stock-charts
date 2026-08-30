@@ -47,6 +47,26 @@ class Ticker:
 
 
 @dataclass(frozen=True, slots=True)
+class InvestorFlow:
+    """종목 하나의 하루치 투자자별 **순매수거래대금(원)** (SPEC F14, v2.2).
+
+    pykrx는 투자자 이름을 하나씩만 받으므로 투자자별로 따로 받아 여기에 합친다.
+
+    **None과 0은 다르다.** 그 투자자 표에 종목이 없으면 `None`(안 받았거나 거래가 집계되지 않음),
+    실제로 순매수가 0원이면 `0`이다. 0으로 채우면 "거래가 없었다"가 "값이 없다"를 덮는다.
+
+    `외국인합계`는 담지 않는다 — pykrx의 이 엔드포인트가 받지 않는 값이라
+    읽는 쪽에서 `foreign_net + foreign_etc_net`으로 만든다 (2026-08-30 실측).
+    """
+
+    inst_net: int | None = None  # 기관합계
+    foreign_net: int | None = None  # 외국인
+    foreign_etc_net: int | None = None  # 기타외국인
+    indiv_net: int | None = None  # 개인
+    corp_etc_net: int | None = None  # 기타법인
+
+
+@dataclass(frozen=True, slots=True)
 class MarketCap:
     """종목 하나의 시가총액·상장주식수 (SPEC F8, v2.1).
 

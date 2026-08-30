@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from pipeline import config
 
@@ -192,6 +192,8 @@ def run_update(date: str) -> int:
 
     # 시가총액·상장주식수 (F8, v2.1) — 호출 1회. 실패해도 봉 갱신은 성공이다.
     caps_written = update.update_market_caps(client, date, all_tickers)
+    # 투자자별 순매수 (F14) — 시총과 같은 보조 정보다. 실패해도 갱신은 성공으로 본다.
+    flows_written = update.update_investor_flows(client, date)
 
     store.set_meta(
         client,
@@ -206,6 +208,7 @@ def run_update(date: str) -> int:
                 "monthly": result.monthly_written,
             },
             "marketCaps": caps_written,
+            "investorFlows": flows_written,
             "refetched": drifted,
         },
     )
@@ -279,6 +282,40 @@ def _shift_years(date: str, years: int) -> str:
     return shifted.strftime("%Y%m%d")
 
 
+def run_backfill_flows(end: str, days: int) -> int:
+    """투자자별 순매수를 거슬러 채운다 (SPEC F14, 일회성).
+
+    일일 갱신(`--update`)은 그날치만 모은다. 하위 프로젝트가 **30일 추세**를 보려면
+    처음 한 번은 과거를 채워야 한다. 휴장일은 빈 응답이 와서 조용히 넘어간다.
+
+    Args:
+        end: 마지막 날 ("YYYYMMDD").
+        days: 거슬러 올라갈 달력 일수 (거래일 기준이 아니다 — 주말·휴장일은 빈 응답).
+
+    Returns:
+        종료 코드. 하루라도 저장했으면 0.
+    """
+    from pipeline import store, update
+
+    try:
+        client = store.get_client()
+    except Exception as exc:  # noqa: BLE001
+        print(f"오류: Supabase 연결 실패: {exc}", file=sys.stderr)
+        return 1
+
+    last = date(int(end[:4]), int(end[4:6]), int(end[6:]))
+    total = trading_days = 0
+    for back in range(days):
+        day = last - timedelta(days=back)
+        n = update.update_investor_flows(client, day.strftime("%Y%m%d"))
+        if n:
+            trading_days += 1
+            total += n
+            print(f"  {day} — {n:,}종목")
+    print(f"투자자별 순매수 백필 완료: {trading_days}거래일 · {total:,}행")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 진입점."""
     parser = argparse.ArgumentParser(description="KRX 주식 데이터 수집 파이프라인")
@@ -287,6 +324,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--update", action="store_true", help="당일 증분 갱신 (M2)")
     parser.add_argument(
         "--fill-amount", action="store_true", help="거래대금 소급 채우기 (일회성)"
+    )
+    parser.add_argument(
+        "--backfill-flows",
+        type=int,
+        metavar="DAYS",
+        default=None,
+        help="투자자별 순매수 소급 수집 — 최근 DAYS일 (F14, 일회성)",
     )
     parser.add_argument("--date", default=None, help='기준일 "YYYYMMDD" (기본: 오늘)')
     parser.add_argument("--limit", type=int, default=None, help="대상 종목 수 상한 (시험 실행용)")
@@ -308,6 +352,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.fill_amount:
         return run_fill_amount(date)
+
+    if args.backfill_flows:
+        return run_backfill_flows(date, args.backfill_flows)
 
     parser.print_help()
     return 0

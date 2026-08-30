@@ -70,17 +70,48 @@ create table if not exists ksc_meta (
 );
 
 -- ─────────────────────────────────────────────
+-- 투자자별 순매수 (SPEC F14, v2.2 — 2026-08-30)
+--
+-- **넓은 형태로 둔다.** 투자자별로 행을 나누면 2,700종목 × 5투자자 = 13,500행/일,
+-- 1년이면 3.4M행이 된다. ksc_bars가 이미 2.4M행·267MB다. 종목당 한 행이면 1년 985K행,
+-- 120일 보존이면 32만 행에 머문다.
+--
+-- 값은 전부 **순매수거래대금(원)**이다. 순매수거래량은 담지 않는다 — 쓰는 쪽(하위
+-- krx-signal-briefing F17)이 금액으로만 본다. 필요해지면 열을 더한다.
+--
+-- `외국인합계`는 저장하지 않는다. pykrx의 이 엔드포인트가 받지 않는 값이라
+-- `foreign_net + foreign_etc_net`으로 읽는 쪽에서 만든다 (2026-08-30 실측).
+-- ─────────────────────────────────────────────
+create table if not exists ksc_investor_flows (
+  d                date   not null,
+  ticker           text   not null,
+  inst_net         bigint,          -- 기관합계
+  foreign_net      bigint,          -- 외국인
+  foreign_etc_net  bigint,          -- 기타외국인
+  indiv_net        bigint,          -- 개인
+  corp_etc_net     bigint,          -- 기타법인
+  primary key (d, ticker)
+);
+
+-- 하위 프로젝트는 "종목 15개 × 최근 30일"로 읽는다. 그 모양에 맞춘 인덱스.
+create index if not exists ksc_investor_flows_ticker_d on ksc_investor_flows (ticker, d desc);
+
+-- ─────────────────────────────────────────────
 -- RLS — 읽기는 공개, 쓰기는 service_role만 (service_role은 RLS를 우회한다)
 -- 웹은 anon 키로 SELECT만 하므로 별도 쓰기 정책을 만들지 않는다.
 -- ─────────────────────────────────────────────
 alter table ksc_tickers enable row level security;
 alter table ksc_bars    enable row level security;
 alter table ksc_meta    enable row level security;
+alter table ksc_investor_flows enable row level security;
 
 drop policy if exists ksc_tickers_read on ksc_tickers;
 drop policy if exists ksc_bars_read    on ksc_bars;
 drop policy if exists ksc_meta_read    on ksc_meta;
+drop policy if exists ksc_investor_flows_read on ksc_investor_flows;
 
 create policy ksc_tickers_read on ksc_tickers for select to anon, authenticated using (true);
 create policy ksc_bars_read    on ksc_bars    for select to anon, authenticated using (true);
 create policy ksc_meta_read    on ksc_meta    for select to anon, authenticated using (true);
+-- KRX 공개 시장 데이터다. 공개 읽기가 문제되지 않는다 (해석·판정은 하위 프로젝트에만 있다).
+create policy ksc_investor_flows_read on ksc_investor_flows for select to anon, authenticated using (true);

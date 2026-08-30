@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from pipeline import krx_client, resample, store, validate
-from pipeline.models import Bar, Ticker
+from pipeline.models import Bar, InvestorFlow, Ticker
 
 # 수정주가 소급 변경을 감지할 때 대조할 최근 거래일 수 (SPEC §6)
 DRIFT_CHECK_BARS = 20
@@ -106,6 +106,35 @@ def update_market_caps(
         return 0
     basis = date(int(day[:4]), int(day[4:6]), int(day[6:]))
     return store.upsert_market_caps(client, tickers, caps, basis)
+
+
+def update_investor_flows(client: store.SupabaseLike, day: str) -> int:
+    """투자자별 순매수를 갱신한다 (SPEC F14, v2.2). 시장 2 × 투자자 5 = 호출 10회.
+
+    **보조 정보다** — F8(시총)과 같은 원칙으로, 실패해도 예외를 올리지 않는다.
+    수급이 하루 비는 것보다 워크플로가 실패해 다음 단계가 멈추는 편이 나쁘다.
+    하위 `krx-signal-briefing`은 수급이 없으면 그 층을 생략하고 판정한다.
+
+    Args:
+        client: Supabase 클라이언트.
+        day: 거래일 ("YYYYMMDD").
+
+    Returns:
+        저장한 행 수. 실패하거나 휴장일이면 0.
+    """
+    merged: dict[str, InvestorFlow] = {}
+    for market in krx_client.MARKETS:
+        try:
+            merged.update(krx_client.get_investor_flows(day, market))
+        except krx_client.KrxError as exc:
+            print(f"  투자자 순매수 갱신 실패(무시): {market} — {exc}")
+            return 0
+    if not merged:
+        return 0
+    d = date(int(day[:4]), int(day[4:6]), int(day[6:]))
+    n = store.upsert_investor_flows(client, merged, d)
+    store.prune_investor_flows(client, d)
+    return n
 
 
 def update_day(

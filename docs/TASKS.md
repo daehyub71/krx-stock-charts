@@ -441,3 +441,32 @@ Supabase는 이 문제가 없고, 데이터가 갱신돼도 웹 재배포가 필
 
 > 확인 과정에서 **제 검증 스크립트가 5초만 기다려 "스파크라인 0개"라는 오진**을 냈다.
 > 실제로는 9번 왕복에 약 7초가 걸려 채워지는 중이었다. DOM을 직접 들여다보고서야 알았다.
+
+
+---
+
+## F14 — 투자자별 순매수 수집 (v2.2, 2026-08-30)
+
+> **요청 출처**: 하위 `krx-signal-briefing`이 v3.0에서 "차트 신호 검증"으로 목적을 바꾸며
+> 기관·외국인 수급 30일치가 필요해졌다 (하위 SPEC F17·D22). F8(시총)과 같은 판단이다.
+
+- [x] SPEC F14 신설 · 변경 이력 기록 (v2.2)
+- [x] `supabase/schema.sql` — `ksc_investor_flows` **넓은 형태**(PK `(d, ticker)`) + `(ticker, d desc)` 인덱스 + RLS 읽기 정책. 실DB 적용 확인
+- [x] `models.InvestorFlow` — 5개 투자자 순매수거래대금. **None과 0을 구분한다**
+- [x] `krx_client.get_investor_flows(date, market)` — 투자자 5명을 따로 받아 종목당 한 행으로 합침. 하루 단위 조회(`fromdate == todate`)
+- [x] `store.investor_flow_rows` · `upsert_investor_flows` · `prune_investor_flows`(120일 보존)
+- [x] `update.update_investor_flows` — 시장 2곳. **보조 정보라 실패해도 예외를 올리지 않는다**(F8과 같은 원칙)
+- [x] `main.py` 연결 — `--update`에 포함, `ksc_meta.update.investorFlows`에 행 수 기록
+- [x] `--backfill-flows DAYS` — 소급 수집 CLI
+- [x] 테스트 12개 (`tests/test_investor_flows.py`) · ruff · mypy strict · 전체 141개 통과
+- [x] **실수집**: 45일 요청 → **31거래일 · 81,852행 · 2,693종목** (2026-07-14 ~ 08-27)
+
+### 측정 기록
+
+| 항목 | 값 |
+|------|-----|
+| 호출 수 | 시장 2 × 투자자 5 = **하루 10회** (종목당 조회였다면 2,700회) |
+| 호출 시간 | 각 0.2~0.3초 (KOSDAQ 1,719종목 0.2초 실측) |
+| 저장량 | 하루 약 2,650행 · 31거래일 81,852행. 120일 보존 시 약 32만 행 |
+| 투자자 유효값 | `기관합계`·`외국인`·`기타외국인`·`개인`·`기타법인`. **`외국인합계`는 거부됨** |
+| 검증 표본 | 씨피시스템 08/26(CB 공시일) 외국인 -11.26억 / 개인 +11.31억 · 31일 누적 외국인합계 -5.73억 |

@@ -20,6 +20,7 @@ KOSPI200 종목의 3년치 일봉을 pykrx로 수집하고, **주봉·월봉을 
 | `ksc_tickers` | 종목 메타 | PK `ticker` |
 | `ksc_bars` | 일·주·월봉 (`timeframe`으로 구분) | PK `(ticker, timeframe, d)` |
 | `ksc_meta` | 실행 메타 (기준일·행 수) | PK `key` |
+| `ksc_investor_flows` | **투자자별 순매수거래대금** (F14, v2.2) — 종목당 한 행, 120일 보존 | PK `(d, ticker)` |
 
 스키마 원본은 `supabase/schema.sql` — 재실행해도 안전하다(멱등).
 적용은 `SUPABASE_DATABASE_URL` + psycopg로 직접 실행한다 (supabase-py는 DDL 미지원).
@@ -34,6 +35,7 @@ python -m pipeline.main --backfill                 # 3년 백필 (약 3분, 200�
 python -m pipeline.main --backfill --limit 5       # 소수 종목 시험 실행
 python -m pipeline.main --update                   # 당일 증분 갱신 (1회 요청)
 python -m pipeline.main --update --date 20260814   # 특정 거래일
+python -m pipeline.main --backfill-flows 45        # 투자자별 순매수 소급 수집 (F14, 일회성)
 ```
 
 스키마 적용(최초 1회 또는 변경 시):
@@ -104,6 +106,13 @@ OHLCV 조회는 자격증명 없이도 동작하므로, 증상이 "종목목록�
   이걸 모르고 검사 쿼리를 짜면 "데이터가 없다"는 오탐이 난다.
 - **DB 제약이 2차 방어선** — `ksc_bars`에 CHECK 제약(가격>0, `h>=max(o,c)`, `l<=min(o,c)`)이 걸려 있다.
   `validate.py`가 놓쳐도 오염 행은 저장이 거부되므로, 적재 실패 시 이 제약부터 의심한다.
+- **투자자별 순매수는 투자자 이름을 하나씩만 받는다** — `get_market_net_purchases_of_equities_by_ticker`는
+  `외국인합계`를 거부한다(`외국인` + `기타외국인`으로 만든다). 한 번에 그 시장 전 종목을 주므로
+  시장2 × 투자자5 = 하루 10회면 끝난다. 종목당 부르면 2,700회다.
+- **휴장일에는 pykrx가 `Length mismatch` 로그를 찍는다** — 빈 응답을 처리하다 나오는 내부 메시지이지
+  오류가 아니다. `get_investor_flows`는 빈 dict로 넘긴다.
+- **`ksc_investor_flows`는 넓은 형태다** — 투자자별로 행을 나누면 1년 3.4M행이 된다.
+  `ksc_bars`가 이미 2.4M행·267MB라 종목당 한 행 + 120일 보존으로 32만 행에 묶었다.
 - **파일명은 ASCII** — 종목명이 들어가는 파일은 티커로만 명명한다 (Vercel ENOENT 방지).
 - **실행 위치** — pip/npm은 반드시 이 디렉토리(또는 `web/`)에서. 워크스페이스 루트 오설치 사례 있음.
 
