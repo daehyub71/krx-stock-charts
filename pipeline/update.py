@@ -167,32 +167,35 @@ def update_day(
     result.missing = sorted(target - todays.keys())
 
     # 2) 당일 일봉 적재 (검증 통과분만)
+    # 종목마다 따로 쓰면 요청이 종목 수만큼(2,700회) 나간다. 한 번에 묶는다.
+    clean: dict[str, list[Bar]] = {}
     for ticker, bar in todays.items():
         issues = validate.validate_bars(ticker, [bar])
         if validate.has_errors(issues):
             result.warnings.append(f"{ticker} 당일 봉 검증 실패, 건너뜀: {issues[0]}")
             continue
-        result.daily_written += store.upsert_bars(client, ticker, "daily", [bar])
-        result.updated_tickers += 1
+        clean[ticker] = [bar]
+    result.daily_written = store.upsert_bars_bulk(client, "daily", clean)
+    result.updated_tickers = len(clean)
 
     # 3) 진행 중인 주·월 구간을 DB에서 읽어 재계산 (PLAN §3)
     window = tail_window_start(iso_day)
     recent = store.fetch_daily_since(client, window, tickers=sorted(todays.keys()))
 
+    # 여기도 종목마다 두 번씩 쓰면 5,400회다. 전 종목을 모아 한 번에 쓴다.
+    weekly: dict[str, list[Bar]] = {}
+    monthly: dict[str, list[Bar]] = {}
     for ticker, bars in recent.items():
         if not bars:
             continue
         in_week = [b for b in bars if resample.week_start(b.date) == resample.week_start(iso_day)]
         in_month = [b for b in bars if b.date[:7] == iso_day[:7]]
-
         if in_week:
-            result.weekly_written += store.upsert_bars(
-                client, ticker, "weekly", resample.resample(in_week, "weekly")
-            )
+            weekly[ticker] = list(resample.resample(in_week, "weekly"))
         if in_month:
-            result.monthly_written += store.upsert_bars(
-                client, ticker, "monthly", resample.resample(in_month, "monthly")
-            )
+            monthly[ticker] = list(resample.resample(in_month, "monthly"))
+    result.weekly_written = store.upsert_bars_bulk(client, "weekly", weekly)
+    result.monthly_written = store.upsert_bars_bulk(client, "monthly", monthly)
 
     return result
 

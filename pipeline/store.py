@@ -118,6 +118,11 @@ def upsert_tickers(
     return len(rows)
 
 
+# `.in_()`은 쿼리 문자열에 들어간다. 한 번에 넣을 티커 수 상한.
+# 2,700개를 그대로 넣었더니 URL이 길어져 PostgREST가 400을 돌려줬다 (2026-08-30 실장애).
+# 웹(`web/lib/load.ts`)은 같은 이유로 300을 쓴다.
+TICKER_FILTER_CHUNK = 300
+
 INVESTOR_FLOWS_TABLE = "ksc_investor_flows"
 
 # 얼마나 보관할지. 하위 프로젝트는 30일을 읽는다 — 넉넉히 두되 무한히 쌓지는 않는다.
@@ -278,6 +283,36 @@ def upsert_bars(
     return len(rows)
 
 
+def upsert_bars_bulk(
+    client: SupabaseLike,
+    timeframe: Timeframe,
+    items: Mapping[str, Sequence[Bar]],
+    batch_size: int = DEFAULT_BATCH,
+) -> int:
+    """여러 종목의 봉을 **종목을 가로질러 묶어** 저장한다 (멱등).
+
+    `upsert_bars`는 한 종목 안에서만 묶으므로 종목마다 요청이 나간다. 일일 갱신은
+    종목당 봉이 하나라 그대로 2,700회가 되고, 주·월봉까지 더하면 약 8,000회다.
+    워크플로 제한은 30분인데 그만큼이면 40~50분이 걸린다 — 거래일 실행이 매번
+    잘린 진짜 이유였다 (2026-08-30 확인).
+
+    Args:
+        client: Supabase 클라이언트.
+        timeframe: "daily" | "weekly" | "monthly".
+        items: {티커: 봉 목록}.
+        batch_size: 한 요청에 보낼 최대 행 수.
+
+    Returns:
+        저장한 행 수.
+    """
+    rows: list[dict[str, Any]] = []
+    for ticker, bars in items.items():
+        rows.extend(bar_rows(ticker, timeframe, bars))
+    for batch in chunked(rows, batch_size):
+        client.table(BARS_TABLE).upsert(batch, on_conflict="ticker,timeframe,d").execute()
+    return len(rows)
+
+
 def set_meta(client: SupabaseLike, key: str, value: dict[str, Any]) -> None:
     """실행 메타를 기록한다 (데이터 기준일·행 수 등).
 
@@ -294,21 +329,44 @@ def fetch_daily_since(
     since: str,
     tickers: Sequence[str] | None = None,
     page: int = 1000,
+    chunk: int = TICKER_FILTER_CHUNK,
 ) -> dict[str, list[Bar]]:
     """특정 날짜 이후의 일봉을 종목별로 읽는다.
 
     Supabase REST는 한 응답의 행 수에 상한이 있으므로 range로 페이지네이션한다.
+
+    **티커 필터는 나눠 보낸다.** `.in_()`은 쿼리 문자열에 들어가므로 2,700개를 한 번에
+    넣으면 URL이 길어져 PostgREST가 `400 Bad Request`를 돌려준다. 응답 본문이 JSON이
+    아니라 supabase-py는 "JSON could not be generated"로 다시 감싸 원인이 드러나지 않는다.
+    이 실패가 2026-08-18부터 매일 워크플로를 멈춰 세웠다 (08/28 일봉과 주·월봉 재계산이 빠졌다).
 
     Args:
         client: Supabase 클라이언트.
         since: 이 날짜 이상 ("YYYY-MM-DD").
         tickers: 대상 종목. None이면 전체.
         page: 페이지 크기.
+        chunk: 한 요청에 넣을 티커 수 상한.
 
     Returns:
         {티커: 날짜 오름차순 Bar 리스트}.
     """
     out: dict[str, list[Bar]] = {}
+    groups: list[Sequence[str] | None] = (
+        [None] if tickers is None else list(chunked(list(tickers), chunk))
+    )
+    for group in groups:
+        _fetch_daily_group(client, since, group, page, out)
+    return out
+
+
+def _fetch_daily_group(
+    client: SupabaseLike,
+    since: str,
+    tickers: Sequence[str] | None,
+    page: int,
+    out: dict[str, list[Bar]],
+) -> None:
+    """티커 묶음 하나를 페이지네이션으로 읽어 `out`에 담는다."""
     offset = 0
 
     while True:
@@ -338,8 +396,6 @@ def fetch_daily_since(
         if len(rows) < page:
             break
         offset += page
-
-    return out
 
 
 def fetch_all_tickers(client: SupabaseLike, page: int = DEFAULT_PAGE) -> list[Ticker]:
