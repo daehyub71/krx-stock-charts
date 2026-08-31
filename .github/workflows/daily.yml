@@ -4,6 +4,8 @@ name: Daily KRX update
 on:
   schedule:
     - cron: "0 9 * * 1-5"
+    # 토요일 19:00 KST — 수정주가 소급 변경 검사 (drift 잡)
+    - cron: "0 10 * * 6"
   workflow_dispatch:
     inputs:
       date:
@@ -21,6 +23,7 @@ concurrency:
 
 jobs:
   update:
+    if: github.event_name != 'schedule' || github.event.schedule == '0 9 * * 1-5'
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -63,9 +66,9 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           if [ -n "$RUN_DATE" ]; then
-            python -m pipeline.main --universe --date "$RUN_DATE"
+            python -u -m pipeline.main --universe --date "$RUN_DATE"
           else
-            python -m pipeline.main --universe
+            python -u -m pipeline.main --universe
           fi
 
       - name: Universe result
@@ -80,7 +83,34 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           if [ -n "$RUN_DATE" ]; then
-            python -m pipeline.main --update --date "$RUN_DATE"
+            python -u -m pipeline.main --update --date "$RUN_DATE"
           else
-            python -m pipeline.main --update
+            python -u -m pipeline.main --update
           fi
+
+  # 수정주가 소급 변경 검사 — **주 1회**. 종목마다 KRX를 불러야 해서(수정주가는 종목축에만 있다)
+  # 2,769종목이면 대기만 28분이다. 일일 갱신에 두었더니 30분 제한에 매번 걸렸다 (2026-08-31).
+  # 하루 이틀 늦게 고쳐져도 그동안 차트는 옛 수정 기준으로 일관돼 있다.
+  drift:
+    if: github.event_name == 'schedule' && github.event.schedule == '0 10 * * 6'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check adjusted-price drift
+        env:
+          KRX_ID: ${{ secrets.KRX_ID }}
+          KRX_PW: ${{ secrets.KRX_PW }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python -u -m pipeline.main --check-drift

@@ -152,7 +152,7 @@ def run_update(date: str) -> int:
     Returns:
         프로세스 종료 코드 (0=성공/휴장, 1=실패).
     """
-    from pipeline import collect, store, update
+    from pipeline import store, update
 
     try:
         client = store.get_client()
@@ -180,15 +180,11 @@ def run_update(date: str) -> int:
         store.set_meta(client, "update", {"updated": iso_date, "tradingDay": False})
         return 0
 
-    # 수정주가 소급 변경 감지 → 해당 종목만 3주기 재생성 (SPEC §6)
-    drifted = update.check_drift(client, tickers, date)
-    for ticker in drifted:
-        start = _shift_years(date, -config.BACKFILL_YEARS)
-        try:
-            collect.collect_ticker(client, ticker, start, date)
-        except Exception as exc:  # noqa: BLE001
-            result.warnings.append(f"{ticker} 재백필 실패: {exc}")
-    result.drifted = drifted
+    # 수정주가 소급 변경 감지는 **일일 갱신에서 뺐다** (2026-08-31).
+    # 종목축 조회가 필요해 2,769회 × REQUEST_DELAY 0.6초 = 대기만 28분이고,
+    # 워크플로 제한이 30분이라 거래일 실행이 매번 잘렸다. 날짜축은 원주가를 주므로
+    # 대체할 수 없다(pykrx: `adjusted`는 종목축에만 있다).
+    # → `--check-drift`로 분리해 주 1회 돈다. 하루 늦게 고쳐져도 차트는 그동안 옛 기준으로 맞다.
 
     # 시가총액·상장주식수 (F8, v2.1) — 호출 1회. 실패해도 봉 갱신은 성공이다.
     caps_written = update.update_market_caps(client, date, all_tickers)
@@ -209,7 +205,7 @@ def run_update(date: str) -> int:
             },
             "marketCaps": caps_written,
             "investorFlows": flows_written,
-            "refetched": drifted,
+            "refetched": [],
         },
     )
 
@@ -218,8 +214,8 @@ def run_update(date: str) -> int:
     print(f"  월봉 재계산 : {result.monthly_written}행")
     cap_note = "" if caps_written else " (수집 실패 — 봉은 정상)"
     print(f"  시가총액    : {caps_written}종목{cap_note}")
-    if drifted:
-        print(f"  수정주가 변경 : {len(drifted)}종목 재백필 {drifted[:5]}")
+    flow_note = "" if flows_written else " (수집 실패 — 봉은 정상)"
+    print(f"  투자자 순매수 : {flows_written}행{flow_note}")
     if result.missing:
         print(f"  당일 데이터 없음: {len(result.missing)}종목 {result.missing[:5]}")
     for w in result.warnings[:5]:
@@ -316,6 +312,51 @@ def run_backfill_flows(end: str, days: int) -> int:
     return 0
 
 
+def run_check_drift(date: str) -> int:
+    """수정주가 소급 변경을 찾아 해당 종목만 3년치 재생성한다 (SPEC §6).
+
+    **일일 갱신에서 떼어낸 작업이다** (2026-08-31). 종목마다 KRX를 한 번씩 불러야 해서
+    2,769종목이면 `REQUEST_DELAY` 0.6초로 대기만 28분이다 — 30분짜리 일일 워크플로가
+    매번 잘렸다. 날짜축 조회는 **원주가**를 주므로 대체할 수 없다
+    (pykrx는 `adjusted`를 종목축에만 준다 — 2026-08-31 실측: 000040이 1,335 대 267, 정확히 5배).
+
+    하루 이틀 늦게 고쳐져도 그동안 차트는 옛 수정 기준으로 일관돼 있다.
+
+    Args:
+        date: 기준일 ("YYYYMMDD").
+
+    Returns:
+        종료 코드.
+    """
+    from pipeline import collect, store, update
+
+    try:
+        client = store.get_client()
+    except Exception as exc:  # noqa: BLE001
+        print(f"오류: Supabase 연결 실패: {exc}", file=sys.stderr)
+        return 1
+
+    all_tickers = store.fetch_all_tickers(client)
+    tickers = [t.ticker for t in all_tickers]
+    print(f"수정주가 소급 변경 검사 {date} · 대상 {len(tickers):,}종목 (종목축 조회)")
+    drifted = update.check_drift(client, tickers, date)
+    print(f"  소급 변경 {len(drifted)}종목")
+    failed: list[str] = []
+    for ticker in drifted:
+        start = _shift_years(date, -config.BACKFILL_YEARS)
+        try:
+            collect.collect_ticker(client, ticker, start, date)
+        except Exception as exc:  # noqa: BLE001
+            failed.append(f"{ticker}: {exc}")
+    if failed:
+        print(f"  재백필 실패 {len(failed)}종목: {failed[:3]}")
+    store.set_meta(
+        client, "drift", {"checked": date, "drifted": drifted, "failed": len(failed)}
+    )
+    print(f"재백필 완료 {len(drifted) - len(failed)}/{len(drifted)}종목")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 진입점."""
     parser = argparse.ArgumentParser(description="KRX 주식 데이터 수집 파이프라인")
@@ -324,6 +365,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--update", action="store_true", help="당일 증분 갱신 (M2)")
     parser.add_argument(
         "--fill-amount", action="store_true", help="거래대금 소급 채우기 (일회성)"
+    )
+    parser.add_argument(
+        "--check-drift",
+        action="store_true",
+        help="수정주가 소급 변경 감지 → 해당 종목만 재생성 (주 1회, 오래 걸린다)",
     )
     parser.add_argument(
         "--backfill-flows",
@@ -352,6 +398,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.fill_amount:
         return run_fill_amount(date)
+
+    if args.check_drift:
+        return run_check_drift(date)
 
     if args.backfill_flows:
         return run_backfill_flows(date, args.backfill_flows)

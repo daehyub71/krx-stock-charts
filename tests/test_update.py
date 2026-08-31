@@ -119,3 +119,34 @@ def test_update_market_caps_returns_zero_when_krx_fails(monkeypatch: Any) -> Non
 def test_update_market_caps_empty_result_is_zero(monkeypatch: Any) -> None:
     monkeypatch.setattr(_krx, "get_market_caps", lambda d: {})
     assert _update.update_market_caps(object(), "20260827", _METAS) == 0
+
+
+# ── 드리프트 검사는 종목축이어야 한다 (2026-08-31) ──────────────
+#
+# 날짜축(`get_market_ohlcv_by_ticker`)으로 바꿔 호출을 2,769회 → 40회로 줄여 봤으나
+# **그 경로는 원주가를 준다.** 수정주가는 종목축(`get_market_ohlcv_by_date`,
+# `adjusted=True`)에만 있다 — pykrx 시그니처 확인.
+#
+# 실측: 000040 저장 1,335 · 날짜축 267 (정확히 5배, 액면분할) · 종목축 1,335.
+# 그대로 뒀으면 76종목이 거짓으로 소급 변경 판정을 받아 3년치 재백필이 돌 뻔했다.
+#
+# 그래서 검사 자체는 종목축을 유지하고, **일일 갱신에서 떼어 낸다** (아래 워크플로 분리).
+
+
+def test_drift_detection_needs_adjusted_prices() -> None:
+    """이 테스트는 잘못된 최적화를 다시 시도하지 않게 막는다.
+
+    날짜축 조회는 원주가라 저장분(수정주가)과 늘 어긋난다 — 액면분할 종목은 정확히 배수로.
+    """
+    def bar(close: int) -> _Bar:
+        return _Bar(
+            date="2026-07-20", open=close, high=close, low=close,
+            close=close, volume=1, amount=1,
+        )
+
+    stored, raw = [bar(1335)], [bar(267)]
+    assert _update.detect_drift(stored, raw), "원주가와 대조하면 늘 어긋난 것으로 잡힌다"
+
+
+
+from pipeline.models import Bar as _Bar  # noqa: E402
