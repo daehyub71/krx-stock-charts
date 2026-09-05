@@ -70,6 +70,36 @@ create table if not exists ksc_meta (
 );
 
 -- ─────────────────────────────────────────────
+-- 지수 일봉 (2026-09-05 — 하위 krx-signal-verify V12 요청)
+--
+-- 「수집은 charts가, 판단은 하위가」 — 시총(F8)·수급(F14)과 같은 원칙이다.
+-- 하위는 판정의 **기준선**으로 쓴다: 종목 수익률 − 소속 시장 지수 수익률 = 초과수익.
+--
+-- **`ksc_bars`에 넣을 수 없다.** 그 표는 `ksc_tickers` FK와 `^[0-9A-Z]{6}$` 제약이 있어
+-- 지수를 종목으로 위장해야 하는데, 그러면 전 종목 조회에 지수가 섞여 나온다.
+--
+-- **가격이 numeric이다.** 지수는 소수점이 있다(6,579.48). 정수로 저장하면 0.5% 오차가
+-- 하위의 초과수익 계산에 그대로 실린다.
+-- ─────────────────────────────────────────────
+create table if not exists ksc_index_bars (
+  market  text    not null,
+  d       date    not null,
+  o       numeric(12, 2) not null,  -- 시가 (지수 포인트)
+  h       numeric(12, 2) not null,  -- 고가
+  l       numeric(12, 2) not null,  -- 저가
+  c       numeric(12, 2) not null,  -- 종가
+  v       bigint  not null default 0,  -- 거래량 (주)
+  a       bigint,                      -- 거래대금 (원, nullable)
+
+  primary key (market, d),
+
+  -- `ksc_tickers.market`과 같은 말이어야 한다 — 하위가 그것으로 지수를 고른다.
+  constraint ksc_index_bars_market check (market in ('KOSPI', 'KOSDAQ')),
+  constraint ksc_index_bars_positive check (o > 0 and h > 0 and l > 0 and c > 0 and v >= 0),
+  constraint ksc_index_bars_ohlc_order check (h >= greatest(o, c) and l <= least(o, c) and h >= l)
+);
+
+-- ─────────────────────────────────────────────
 -- 투자자별 순매수 (SPEC F14, v2.2 — 2026-08-30)
 --
 -- **넓은 형태로 둔다.** 투자자별로 행을 나누면 2,700종목 × 5투자자 = 13,500행/일,
@@ -102,16 +132,41 @@ create index if not exists ksc_investor_flows_ticker_d on ksc_investor_flows (ti
 -- ─────────────────────────────────────────────
 alter table ksc_tickers enable row level security;
 alter table ksc_bars    enable row level security;
+-- ─────────────────────────────────────────────
+-- ksc_meta.updated_at 이 갱신되게 한다 (2026-09-05 — 하위 요청)
+--
+-- **`default now()`는 INSERT에만 걸린다.** 파이프라인이 `upsert(key, value)`로 값만 갈아
+-- 끼우는데 UPDATE 경로는 아무도 `updated_at`을 안 건드려, 그 열이 **행이 처음 만들어진
+-- 시각에 멈춰 있었다** — 열은 2026-08-15인데 자료는 2026-09-04까지 있었다.
+--
+-- 파이썬 쪽에서도 값을 넘기지만(store.set_meta), 트리거를 함께 둔다:
+-- **어느 writer가 와도** 맞는다. `create or replace`라 재적용이 안전하다.
+-- ⚠ 기존 행을 소급해 고치지는 않는다 — 다음 갱신 때부터 맞다.
+-- ─────────────────────────────────────────────
+create or replace function ksc_touch_updated_at() returns trigger as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists ksc_meta_touch on ksc_meta;
+create trigger ksc_meta_touch before update on ksc_meta
+  for each row execute function ksc_touch_updated_at();
+
 alter table ksc_meta    enable row level security;
+alter table ksc_index_bars enable row level security;
 alter table ksc_investor_flows enable row level security;
 
 drop policy if exists ksc_tickers_read on ksc_tickers;
 drop policy if exists ksc_bars_read    on ksc_bars;
 drop policy if exists ksc_meta_read    on ksc_meta;
+drop policy if exists ksc_index_bars_read on ksc_index_bars;
 drop policy if exists ksc_investor_flows_read on ksc_investor_flows;
 
 create policy ksc_tickers_read on ksc_tickers for select to anon, authenticated using (true);
 create policy ksc_bars_read    on ksc_bars    for select to anon, authenticated using (true);
 create policy ksc_meta_read    on ksc_meta    for select to anon, authenticated using (true);
+create policy ksc_index_bars_read on ksc_index_bars for select to anon, authenticated using (true);
 -- KRX 공개 시장 데이터다. 공개 읽기가 문제되지 않는다 (해석·판정은 하위 프로젝트에만 있다).
 create policy ksc_investor_flows_read on ksc_investor_flows for select to anon, authenticated using (true);

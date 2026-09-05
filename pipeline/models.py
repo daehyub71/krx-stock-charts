@@ -82,6 +82,35 @@ class MarketCap:
 
 
 @dataclass(frozen=True, slots=True)
+class IndexBar:
+    """지수 하나의 하루치 (하위 `krx-signal-verify` V12 요청).
+
+    **`Bar`를 쓰지 않는다.** `Bar`의 가격은 `int`인데 지수는 소수점이 있다 —
+    6,579.48을 6,579로 저장하면 0.5% 오차가 하위의 **초과수익 계산에 그대로 실린다.**
+
+    지수는 종목이 아니라서 `ksc_bars`에도 못 넣는다: 그 표는 `ksc_tickers` FK와
+    `^[0-9A-Z]{6}$` 제약을 갖고 있다.
+
+    Attributes:
+        date: 거래일 (ISO "YYYY-MM-DD").
+        open: 시가 (지수 포인트).
+        high: 고가.
+        low: 저가.
+        close: 종가.
+        volume: 거래량 (주).
+        amount: 거래대금 (원). 없을 수 있다.
+    """
+
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int = 0
+    amount: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class Bar:
     """하나의 봉(캔들).
 

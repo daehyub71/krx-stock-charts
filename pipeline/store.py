@@ -11,10 +11,18 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Mapping, Sequence
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Protocol
 
-from pipeline.models import TIMEFRAME_CODE, Bar, InvestorFlow, MarketCap, Ticker, Timeframe
+from pipeline.models import (
+    TIMEFRAME_CODE,
+    Bar,
+    IndexBar,
+    InvestorFlow,
+    MarketCap,
+    Ticker,
+    Timeframe,
+)
 
 TICKERS_TABLE = "ksc_tickers"
 BARS_TABLE = "ksc_bars"
@@ -321,7 +329,46 @@ def set_meta(client: SupabaseLike, key: str, value: dict[str, Any]) -> None:
         key: 메타 키 (예: "universe", "backfill").
         value: JSON 직렬화 가능한 값.
     """
-    client.table(META_TABLE).upsert({"key": key, "value": value}, on_conflict="key").execute()
+    # ⚠ `updated_at`을 **직접 넘긴다.** 열의 `default now()`는 INSERT에만 걸려,
+    # upsert의 UPDATE 경로에서는 아무도 안 건드린다 — 그래서 그 열이 행이 처음 만들어진
+    # 시각에 멈춰 있었다 (2026-09-05 하위가 발견: 열 2026-08-15 vs 자료 2026-09-04).
+    # DB 트리거도 함께 두었지만(schema.sql), 여기서도 채워 어느 경로로 와도 맞게 한다.
+    client.table(META_TABLE).upsert(
+        {"key": key, "value": value, "updated_at": datetime.now(UTC).isoformat()},
+        on_conflict="key",
+    ).execute()
+
+
+INDEX_BARS_TABLE = "ksc_index_bars"
+
+
+def upsert_index_bars(
+    client: SupabaseLike,
+    market: str,
+    bars: Sequence[IndexBar],
+    batch_size: int = DEFAULT_BATCH,
+) -> int:
+    """지수 일봉을 저장한다 (멱등, 2026-09-05 — 하위 V12 요청).
+
+    Args:
+        client: Supabase 클라이언트.
+        market: "KOSPI" / "KOSDAQ". `ksc_tickers.market`과 같은 말이어야 한다.
+        bars: 저장할 일봉.
+        batch_size: 한 요청에 보낼 최대 행 수.
+
+    Returns:
+        저장한 행 수.
+    """
+    if not bars:
+        return 0
+    rows = [
+        {"market": market, "d": b.date, "o": b.open, "h": b.high,
+         "l": b.low, "c": b.close, "v": b.volume, "a": b.amount}
+        for b in bars
+    ]
+    for batch in chunked(rows, batch_size):
+        client.table(INDEX_BARS_TABLE).upsert(batch, on_conflict="market,d").execute()
+    return len(rows)
 
 
 def fetch_daily_since(

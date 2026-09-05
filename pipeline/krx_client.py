@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from pipeline import config
-from pipeline.models import Bar, InvestorFlow, MarketCap
+from pipeline.models import Bar, IndexBar, InvestorFlow, MarketCap
 
 T = TypeVar("T")
 
@@ -325,6 +325,11 @@ def get_ohlcv(ticker: str, fromdate: str, todate: str) -> list[Bar]:
 INVESTORS: tuple[str, ...] = ("기관합계", "외국인", "기타외국인", "개인", "기타법인")
 MARKETS: tuple[str, ...] = ("KOSPI", "KOSDAQ")
 
+# 지수 코드 — **pykrx 체계다.** KIS는 코스피가 `0001`·코스닥이 `1001`이라
+# **`1001`이 두 체계에서 다른 시장**이다. 헷갈리면 코스닥 값을 코스피로 저장하게 된다.
+# 2026-09-05 이름 조회로 확인: `1001`→코스피 · `2001`→코스닥 · `0001`→pykrx에 없음(0행).
+INDEXES: tuple[tuple[str, str], ...] = (("KOSPI", "1001"), ("KOSDAQ", "2001"))
+
 # InvestorFlow의 어느 칸에 담을지 — 투자자 이름과 필드 이름의 대응.
 _FIELD_OF: dict[str, str] = {
     "기관합계": "inst_net",
@@ -335,6 +340,59 @@ _FIELD_OF: dict[str, str] = {
 }
 
 NET_VALUE_COLUMN = "순매수거래대금"
+
+
+def _opt_int(raw: Any) -> int | None:
+    """거래대금은 없을 수 있다. **0으로 채우지 않는다** — 없는 것과 0원은 다르다."""
+    try:
+        return None if raw is None else int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_index_ohlcv(index_code: str, fromdate: str, todate: str) -> list[IndexBar]:
+    """지수 일봉을 모은다 (하위 `krx-signal-verify` V12 요청).
+
+    **시장당 한 번이면 된다** — 3년(729행)이 1.2초에 온다 (2026-09-05 실측).
+    수급(F14)·시총(F8)과 같은 모양이라 일일 갱신에 2회만 는다.
+
+    `name_display=False`로 부른다. 켜면 지수명 조회를 한 번 더 하는데, 그것이
+    실패하면 **값을 다 받아 놓고 마지막 장식에서 죽는다** (실측).
+
+    Args:
+        index_code: `INDEXES`의 코드. **KIS 체계와 다르다** — 위 주석 참고.
+        fromdate: 시작일 ("YYYYMMDD").
+        todate: 종료일 ("YYYYMMDD").
+
+    Returns:
+        일봉 목록. **빈 목록은 휴장일일 수도, KRX 로그인 실패일 수도 있다** —
+        로그인이 없으면 예외 없이 0행이 온다 (2026-09-05 실측). 부르는 쪽이 날짜로 가른다.
+
+    Raises:
+        KrxError: 재시도 후에도 실패한 경우.
+    """
+
+    def fetch() -> Any:
+        return _stock().get_index_ohlcv(fromdate, todate, index_code, name_display=False)
+
+    df = _retry(fetch, what=f"{fromdate}~{todate} 지수 {index_code} 조회")
+    time.sleep(config.REQUEST_DELAY)
+    if df is None or getattr(df, "empty", True):
+        return []
+    out: list[IndexBar] = []
+    for day, row in df.iterrows():
+        out.append(
+            IndexBar(
+                date=day.strftime("%Y-%m-%d"),
+                open=float(row["시가"]),
+                high=float(row["고가"]),
+                low=float(row["저가"]),
+                close=float(row["종가"]),
+                volume=int(row["거래량"] or 0),
+                amount=_opt_int(row.get("거래대금")),
+            )
+        )
+    return out
 
 
 def get_investor_flows(date: str, market: str) -> dict[str, InvestorFlow]:

@@ -137,6 +137,39 @@ def update_investor_flows(client: store.SupabaseLike, day: str) -> int:
     return n
 
 
+def update_index_bars(client: store.SupabaseLike, day: str) -> int:
+    """지수 일봉을 갱신한다 (2026-09-05 — 하위 `krx-signal-verify` V12 요청). 호출 2회.
+
+    **보조 정보다** — F8(시총)·F14(수급)와 같은 원칙으로, 실패해도 예외를 올리지 않는다.
+    지수가 하루 비는 것보다 워크플로가 멈춰 다음 단계가 못 도는 편이 나쁘다.
+
+    ⚠ **0행이 휴장일인지 로그인 실패인지 가른다.** KRX 로그인이 없으면 pykrx가
+    **예외 없이 0행**을 준다 (2026-09-05 실측). 거래일인데 0행이면 소리를 낸다 —
+    조용히 넘기면 그 갈래가 「정상적으로 비어 있는」 상태로 지나간다.
+
+    Args:
+        client: Supabase 클라이언트.
+        day: 거래일 ("YYYYMMDD").
+
+    Returns:
+        저장한 행 수. 휴장일이거나 전부 실패하면 0.
+    """
+    if not krx_client.is_trading_day(day):
+        return 0
+    written = 0
+    for market, code in krx_client.INDEXES:
+        try:
+            bars = krx_client.get_index_ohlcv(code, day, day)
+        except krx_client.KrxError as exc:
+            print(f"  지수 갱신 실패(무시): {market} — {exc}")
+            continue
+        if not bars:
+            print(f"  ⚠ 지수 {market}({code}) 거래일인데 0행 — KRX 로그인을 확인하라")
+            continue
+        written += store.upsert_index_bars(client, market, bars)
+    return written
+
+
 def update_day(
     client: store.SupabaseLike,
     day: str,

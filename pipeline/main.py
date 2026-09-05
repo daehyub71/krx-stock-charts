@@ -190,6 +190,8 @@ def run_update(date: str) -> int:
     caps_written = update.update_market_caps(client, date, all_tickers)
     # 투자자별 순매수 (F14) — 시총과 같은 보조 정보다. 실패해도 갱신은 성공으로 본다.
     flows_written = update.update_investor_flows(client, date)
+    # 지수 일봉 (2026-09-05, 하위 V12 요청) — 호출 2회. 같은 보조 정보 원칙이다.
+    index_written = update.update_index_bars(client, date)
 
     store.set_meta(
         client,
@@ -205,6 +207,7 @@ def run_update(date: str) -> int:
             },
             "marketCaps": caps_written,
             "investorFlows": flows_written,
+            "indexBars": index_written,
             "refetched": [],
         },
     )
@@ -216,6 +219,8 @@ def run_update(date: str) -> int:
     print(f"  시가총액    : {caps_written}종목{cap_note}")
     flow_note = "" if flows_written else " (수집 실패 — 봉은 정상)"
     print(f"  투자자 순매수 : {flows_written}행{flow_note}")
+    index_note = "" if index_written else " (수집 실패 — 봉은 정상)"
+    print(f"  지수         : {index_written}행{index_note}")
     if result.missing:
         print(f"  당일 데이터 없음: {len(result.missing)}종목 {result.missing[:5]}")
     for w in result.warnings[:5]:
@@ -357,6 +362,36 @@ def run_check_drift(date: str) -> int:
     return 0
 
 
+def run_backfill_index(end: str, years: int) -> int:
+    """지수를 N년치 한 번에 받는다 (2026-09-05 — 하위 V12 요청).
+
+    **시장당 호출 1회다.** 3년이 729행 1.2초에 온다 (실측). 종목 백필과 달리 나눌 이유가 없다.
+
+    Args:
+        end: 종료일 ("YYYYMMDD").
+        years: 받을 연수.
+
+    Returns:
+        종료 코드.
+    """
+    from pipeline import krx_client, store
+
+    client = store.get_client()
+    start = (datetime.strptime(end, "%Y%m%d") - timedelta(days=365 * years + 7)).strftime("%Y%m%d")
+    print(f"지수 백필: {start} ~ {end}")
+    total = 0
+    for market, code in krx_client.INDEXES:
+        bars = krx_client.get_index_ohlcv(code, start, end)
+        if not bars:
+            print(f"  ⚠ {market}({code}) 0행 — KRX 로그인을 확인하라", file=sys.stderr)
+            continue
+        n = store.upsert_index_bars(client, market, bars)
+        print(f"  {market}({code}): {n}행 · {bars[0].date} ~ {bars[-1].date}")
+        total += n
+    store.set_meta(client, "indexBackfill", {"from": start, "to": end, "rows": total})
+    return 0 if total else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """CLI 진입점."""
     parser = argparse.ArgumentParser(description="KRX 주식 데이터 수집 파이프라인")
@@ -377,6 +412,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar="DAYS",
         default=None,
         help="투자자별 순매수 소급 수집 — 최근 DAYS일 (F14, 일회성)",
+    )
+    parser.add_argument(
+        "--backfill-index",
+        type=int,
+        default=None,
+        metavar="YEARS",
+        help="지수 N년 백필 (2026-09-05, 하위 V12) — 시장당 1회면 3년 729행이 온다",
     )
     parser.add_argument("--date", default=None, help='기준일 "YYYYMMDD" (기본: 오늘)')
     parser.add_argument("--limit", type=int, default=None, help="대상 종목 수 상한 (시험 실행용)")
@@ -404,6 +446,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.backfill_flows:
         return run_backfill_flows(date, args.backfill_flows)
+    if args.backfill_index:
+        return run_backfill_index(date, args.backfill_index)
 
     parser.print_help()
     return 0
