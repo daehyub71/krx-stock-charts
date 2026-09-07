@@ -67,6 +67,24 @@ class InvestorFlow:
 
 
 @dataclass(frozen=True, slots=True)
+class ShortVolume:
+    """종목 하나의 하루치 공매도 (SPEC F15 — 하위 `krx-signal-verify` V6b 요청, 2026-09-07).
+
+    `get_shorting_volume_by_ticker`의 열 `공매도·매수·비중`을 그대로 담는다.
+    **0주는 실제 값이다** (2026-09-04 KOSPI 943행 중 119행이 0) — null로 바꾸지 않는다.
+
+    Attributes:
+        short_vol: 공매도 거래량 (주).
+        buy_vol: 매수 거래량 (주) — 비중의 분모.
+        ratio: 비중 (%) = 공매도 / 매수 × 100. KRX가 준 값 그대로.
+    """
+
+    short_vol: int
+    buy_vol: int
+    ratio: float
+
+
+@dataclass(frozen=True, slots=True)
 class MarketCap:
     """종목 하나의 시가총액·상장주식수 (SPEC F8, v2.1).
 

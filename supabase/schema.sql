@@ -127,6 +127,27 @@ create table if not exists ksc_investor_flows (
 create index if not exists ksc_investor_flows_ticker_d on ksc_investor_flows (ticker, d desc);
 
 -- ─────────────────────────────────────────────
+-- 공매도 거래량·비중 (SPEC F15 — 하위 krx-signal-verify V6b 요청, 2026-09-07)
+--
+-- `get_shorting_volume_by_ticker`의 열 `공매도·매수·비중`을 그대로. 시장당 1회로 전 종목이 온다
+-- (KOSPI 943행 · KOSDAQ 1,822행 실측). 종목당 한 행, 수급과 같은 120일 보존.
+-- 0주는 실제 값이라 not null이다. 하위는 「종목 N개 × 최근 20거래일」로 읽는다.
+-- ⚠ 휴장일에 물으면 pykrx가 직전 거래일 자료를 그대로 주므로 파이프라인이 거래일을 먼저 가른다.
+-- ─────────────────────────────────────────────
+create table if not exists ksc_shorting (
+  d          date    not null,
+  ticker     text    not null,
+  short_vol  bigint  not null,          -- 공매도 거래량 (주)
+  buy_vol    bigint  not null,          -- 매수 거래량 (주) — 비중의 분모
+  ratio      numeric(6, 2) not null,    -- 비중 (%) = 공매도 / 매수 × 100
+  primary key (d, ticker),
+  constraint ksc_shorting_ticker_format check (ticker ~ '^[0-9A-Z]{6}$'),
+  constraint ksc_shorting_nonneg check (short_vol >= 0 and buy_vol >= 0 and ratio >= 0)
+);
+
+create index if not exists ksc_shorting_ticker_d on ksc_shorting (ticker, d desc);
+
+-- ─────────────────────────────────────────────
 -- RLS — 읽기는 공개, 쓰기는 service_role만 (service_role은 RLS를 우회한다)
 -- 웹은 anon 키로 SELECT만 하므로 별도 쓰기 정책을 만들지 않는다.
 -- ─────────────────────────────────────────────
@@ -157,12 +178,14 @@ create trigger ksc_meta_touch before update on ksc_meta
 alter table ksc_meta    enable row level security;
 alter table ksc_index_bars enable row level security;
 alter table ksc_investor_flows enable row level security;
+alter table ksc_shorting enable row level security;
 
 drop policy if exists ksc_tickers_read on ksc_tickers;
 drop policy if exists ksc_bars_read    on ksc_bars;
 drop policy if exists ksc_meta_read    on ksc_meta;
 drop policy if exists ksc_index_bars_read on ksc_index_bars;
 drop policy if exists ksc_investor_flows_read on ksc_investor_flows;
+drop policy if exists ksc_shorting_read on ksc_shorting;
 
 create policy ksc_tickers_read on ksc_tickers for select to anon, authenticated using (true);
 create policy ksc_bars_read    on ksc_bars    for select to anon, authenticated using (true);
@@ -170,3 +193,4 @@ create policy ksc_meta_read    on ksc_meta    for select to anon, authenticated 
 create policy ksc_index_bars_read on ksc_index_bars for select to anon, authenticated using (true);
 -- KRX 공개 시장 데이터다. 공개 읽기가 문제되지 않는다 (해석·판정은 하위 프로젝트에만 있다).
 create policy ksc_investor_flows_read on ksc_investor_flows for select to anon, authenticated using (true);
+create policy ksc_shorting_read on ksc_shorting for select to anon, authenticated using (true);

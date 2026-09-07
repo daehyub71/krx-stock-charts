@@ -12,7 +12,7 @@ from collections.abc import Callable
 from typing import Any, TypeVar
 
 from pipeline import config
-from pipeline.models import Bar, IndexBar, InvestorFlow, MarketCap
+from pipeline.models import Bar, IndexBar, InvestorFlow, MarketCap, ShortVolume
 
 T = TypeVar("T")
 
@@ -437,6 +437,49 @@ def get_investor_flows(date: str, market: str) -> dict[str, InvestorFlow]:
             merged.setdefault(str(ticker), {})[field] = int(row[NET_VALUE_COLUMN])
     return {ticker: InvestorFlow(**fields) for ticker, fields in merged.items()}
 
+
+
+SHORT_COLUMNS: tuple[str, str, str] = ("공매도", "매수", "비중")
+
+
+def get_shorting_volumes(date: str, market: str) -> dict[str, ShortVolume]:
+    """하루치 전 종목 공매도 거래량·비중을 **한 번의 호출**로 모은다 (SPEC F15, 하위 V6b).
+
+    2026-09-07 실측: KOSPI 943행 · KOSDAQ 1,822행, 열 `공매도·매수·비중`, 인덱스가 티커.
+
+    ⚠ **휴장일을 물으면 예외 없이 직전 거래일 자료가 그대로 온다** — pykrx가 「가까운
+    영업일」로 바꿔 부른다(일요일 → 금요일 943행, 실측). 응답에는 그 날짜가 없다.
+    그래서 이 함수는 날짜를 가르지 못한다 — **부르는 쪽이 `is_trading_day`를 먼저 본다.**
+
+    Args:
+        date: 조회일 ("YYYYMMDD"). 거래일이어야 한다.
+        market: "KOSPI" / "KOSDAQ".
+
+    Returns:
+        {티커: ShortVolume}. 빈 dict는 로그인 실패일 수 있다 — 부르는 쪽이 거래일이면 소리를 낸다.
+
+    Raises:
+        KrxError: 재시도 후에도 실패했거나, 응답 열이 `SHORT_COLUMNS`가 아닌 경우
+            (잔고 함수가 그렇게 조용히 깨졌다 — 하위 R6).
+    """
+
+    def fetch() -> Any:
+        return _stock().get_shorting_volume_by_ticker(date, market)
+
+    df = _retry(fetch, what=f"{date} {market} 공매도 조회")
+    time.sleep(config.REQUEST_DELAY)
+    if df is None or not hasattr(df, "empty") or df.empty:
+        return {}
+    missing = [c for c in SHORT_COLUMNS if c not in df.columns]
+    if missing:
+        raise KrxError(f"{date} {market} 공매도 응답에 열 {missing}이 없다: {list(df.columns)}")
+    s_col, b_col, r_col = SHORT_COLUMNS
+    return {
+        str(ticker): ShortVolume(
+            short_vol=int(row[s_col]), buy_vol=int(row[b_col]), ratio=round(float(row[r_col]), 2)
+        )
+        for ticker, row in df.iterrows()
+    }
 
 
 def get_market_caps(date: str, market: str = "ALL") -> dict[str, MarketCap]:

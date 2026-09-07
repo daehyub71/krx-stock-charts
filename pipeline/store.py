@@ -20,6 +20,7 @@ from pipeline.models import (
     IndexBar,
     InvestorFlow,
     MarketCap,
+    ShortVolume,
     Ticker,
     Timeframe,
 )
@@ -205,6 +206,49 @@ def prune_investor_flows(
     """
     cutoff = (today - timedelta(days=keep_days)).isoformat()
     client.table(INVESTOR_FLOWS_TABLE).delete().lt("d", cutoff).execute()
+
+
+SHORTING_TABLE = "ksc_shorting"
+
+
+def short_volume_rows(vols: Mapping[str, ShortVolume], day: date) -> list[dict[str, Any]]:
+    """`ksc_shorting` 행으로 편다 (SPEC F15). 티커 오름차순."""
+    iso = day.isoformat()
+    return [
+        {"d": iso, "ticker": ticker, "short_vol": v.short_vol, "buy_vol": v.buy_vol,
+         "ratio": v.ratio}
+        for ticker, v in sorted(vols.items())
+    ]
+
+
+def upsert_shorting(
+    client: SupabaseLike,
+    vols: Mapping[str, ShortVolume],
+    day: date,
+    batch_size: int = DEFAULT_BATCH,
+) -> int:
+    """공매도를 저장한다 (멱등, SPEC F15).
+
+    Args:
+        client: Supabase 클라이언트.
+        vols: {티커: ShortVolume}.
+        day: 거래일 — **`is_trading_day`를 통과한 날짜여야 한다**
+            (휴장일 응답은 직전 거래일 것이다).
+        batch_size: 한 요청에 보낼 최대 행 수.
+
+    Returns:
+        저장한 행 수.
+    """
+    rows = short_volume_rows(vols, day)
+    for batch in chunked(rows, batch_size):
+        client.table(SHORTING_TABLE).upsert(batch, on_conflict="d,ticker").execute()
+    return len(rows)
+
+
+def prune_shorting(client: SupabaseLike, today: date, keep_days: int = RETENTION_DAYS) -> None:
+    """보존 기간을 넘긴 공매도 행을 지운다 (수급과 같은 120일)."""
+    cutoff = (today - timedelta(days=keep_days)).isoformat()
+    client.table(SHORTING_TABLE).delete().lt("d", cutoff).execute()
 
 
 def market_cap_rows(

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from pipeline import krx_client, resample, store, validate
-from pipeline.models import Bar, InvestorFlow, Ticker
+from pipeline.models import Bar, InvestorFlow, ShortVolume, Ticker
 
 # 수정주가 소급 변경을 감지할 때 대조할 최근 거래일 수 (SPEC §6)
 DRIFT_CHECK_BARS = 20
@@ -134,6 +134,44 @@ def update_investor_flows(client: store.SupabaseLike, day: str) -> int:
     d = date(int(day[:4]), int(day[4:6]), int(day[6:]))
     n = store.upsert_investor_flows(client, merged, d)
     store.prune_investor_flows(client, d)
+    return n
+
+
+def update_shorting(client: store.SupabaseLike, day: str) -> int:
+    """공매도 거래량·비중을 갱신한다 (SPEC F15 — 하위 `krx-signal-verify` V6b 요청). 호출 2회.
+
+    **보조 정보다** — F8·F14·지수와 같은 원칙으로, 실패해도 예외를 올리지 않는다.
+    하위는 이 갈래가 없으면 「생략」으로 표기하고 판정한다 (없어도 되는 층).
+
+    ⚠ **거래일 판정이 먼저다.** 휴장일에 물으면 pykrx가 직전 거래일 자료를 그대로 주므로
+    (2026-09-07 실측), 여기서 안 거르면 금요일 값이 일요일 날짜로 저장된다.
+    거래일인데 0행이면 로그인 실패다 — 소리를 낸다.
+
+    Args:
+        client: Supabase 클라이언트.
+        day: 거래일 ("YYYYMMDD").
+
+    Returns:
+        저장한 행 수. 휴장일이거나 전부 실패하면 0.
+    """
+    if not krx_client.is_trading_day(day):
+        return 0
+    merged: dict[str, ShortVolume] = {}
+    for market in krx_client.MARKETS:
+        try:
+            got = krx_client.get_shorting_volumes(day, market)
+        except krx_client.KrxError as exc:
+            print(f"  공매도 갱신 실패(무시): {market} — {exc}")
+            continue
+        if not got:
+            print(f"  ⚠ 공매도 {market} 거래일인데 0행 — KRX 로그인을 확인하라")
+            continue
+        merged.update(got)
+    if not merged:
+        return 0
+    d = date(int(day[:4]), int(day[4:6]), int(day[6:]))
+    n = store.upsert_shorting(client, merged, d)
+    store.prune_shorting(client, d)
     return n
 
 

@@ -22,6 +22,7 @@ KOSPI200 종목의 3년치 일봉을 pykrx로 수집하고, **주봉·월봉을 
 | `ksc_meta` | 실행 메타 (기준일·행 수) | PK `key` |
 | `ksc_index_bars` | **지수 일봉** (KOSPI·KOSDAQ) — 하위 `krx-signal-verify`의 판정 기준선 | PK `(market, d)` |
 | `ksc_investor_flows` | **투자자별 순매수거래대금** (F14, v2.2) — 종목당 한 행, 120일 보존 | PK `(d, ticker)` |
+| `ksc_shorting` | **공매도 거래량·매수량·비중** (F15, v2.4) — 종목당 한 행, 120일 보존. 하위 `krx-signal-verify`의 다섯째 갈래 | PK `(d, ticker)` |
 
 스키마 원본은 `supabase/schema.sql` — 재실행해도 안전하다(멱등).
 적용은 `SUPABASE_DATABASE_URL` + psycopg로 직접 실행한다 (supabase-py는 DDL 미지원).
@@ -37,6 +38,7 @@ python -m pipeline.main --backfill --limit 5       # 소수 종목 시험 실행
 python -m pipeline.main --update                   # 당일 증분 갱신 (1회 요청)
 python -m pipeline.main --update --date 20260814   # 특정 거래일
 python -m pipeline.main --backfill-flows 45        # 투자자별 순매수 소급 수집 (F14, 일회성)
+python -m pipeline.main --backfill-shorting 45     # 공매도 소급 수집 (F15, 일회성)
 python -m pipeline.main --check-drift              # 수정주가 소급 변경 검사·재백필 (주 1회, 오래 걸린다)
 ```
 
@@ -122,6 +124,9 @@ OHLCV 조회는 자격증명 없이도 동작하므로, 증상이 "종목목록�
   시장2 × 투자자5 = 하루 10회면 끝난다. 종목당 부르면 2,700회다.
 - **휴장일에는 pykrx가 `Length mismatch` 로그를 찍는다** — 빈 응답을 처리하다 나오는 내부 메시지이지
   오류가 아니다. `get_investor_flows`는 빈 dict로 넘긴다.
+- **휴장일에 공매도를 물으면 직전 거래일 자료가 그대로 온다** — `get_shorting_volume_by_ticker`는
+  pykrx가 「가까운 영업일」로 바꿔 부르고 응답에 날짜가 없다(일요일 → 금요일 943행, 2026-09-07 실측).
+  `update_shorting`이 `is_trading_day`를 **먼저** 본다. 이 순서를 바꾸면 금요일 값이 일요일로 저장된다.
 - **`ksc_investor_flows`는 넓은 형태다** — 투자자별로 행을 나누면 1년 3.4M행이 된다.
   `ksc_bars`가 이미 2.4M행·267MB라 종목당 한 행 + 120일 보존으로 32만 행에 묶었다.
 - **파일명은 ASCII** — 종목명이 들어가는 파일은 티커로만 명명한다 (Vercel ENOENT 방지).

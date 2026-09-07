@@ -525,3 +525,27 @@ Supabase는 이 문제가 없고, 데이터가 갱신돼도 웹 재배포가 필
 삼성전자(KOSPI)  종목 +6.46% · 지수 +5.16% → 초과 +1.30%p
 ksc_bars 안의 지수 행: 0
 ```
+
+---
+
+## F15 — 공매도 거래량·비중 수집 (v2.4, 2026-09-07)
+
+> **요청 출처**: 하위 `krx-signal-verify` V6b·F32 — 판정의 다섯째 갈래(공매도). F14·지수와 같은 판단이다.
+
+- [x] SPEC F15 신설 · 변경 이력 기록 (v2.4)
+- [x] `supabase/schema.sql` — `ksc_shorting`(PK `(d, ticker)` · `short_vol`·`buy_vol`·`ratio` not null · 티커 형식 제약) + `(ticker, d desc)` 인덱스 + RLS 읽기 정책. 실DB 적용 확인
+- [x] `models.ShortVolume` — 0주는 실제 값(943행 중 119행), null로 바꾸지 않는다
+- [x] `krx_client.get_shorting_volumes(date, market)` — 시장당 1회 전 종목. 열 `공매도·매수·비중`이 없으면 `KrxError`(조용한 0 저장 금지)
+- [x] `store.short_volume_rows` · `upsert_shorting` · `prune_shorting`(120일)
+- [x] `update.update_shorting` — **거래일 판정이 먼저**(휴장일 조회가 직전 거래일 자료를 그대로 준다, 실측) · 거래일 0행이면 경고 · 실패해도 예외 없음
+- [x] `main.py` — `--update`에 포함, `ksc_meta.update.shorting`에 행 수 · `--backfill-shorting DAYS`
+- [x] 테스트 15개 (`tests/test_shorting.py`) · ruff · mypy strict · 전체 184개 통과
+- [x] **실수집**: 45일 백필 (아래 측정 기록)
+
+### 측정 기록
+
+| 항목 | 값 |
+|------|-----|
+| 호출 수 | 시장 2 = **하루 2회** + 거래일 판정 1회 |
+| 행 수 | KOSPI 943 · KOSDAQ 1,822 (2026-09-04) |
+| 함정 | 일요일(2026-09-06) 조회 → 예외 없이 금요일 943행 |

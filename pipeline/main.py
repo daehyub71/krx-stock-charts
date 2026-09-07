@@ -192,6 +192,8 @@ def run_update(date: str) -> int:
     flows_written = update.update_investor_flows(client, date)
     # 지수 일봉 (2026-09-05, 하위 V12 요청) — 호출 2회. 같은 보조 정보 원칙이다.
     index_written = update.update_index_bars(client, date)
+    # 공매도 (F15, 2026-09-07 — 하위 V6b 요청) — 호출 2회. 같은 보조 정보 원칙이다.
+    shorting_written = update.update_shorting(client, date)
 
     store.set_meta(
         client,
@@ -208,6 +210,7 @@ def run_update(date: str) -> int:
             "marketCaps": caps_written,
             "investorFlows": flows_written,
             "indexBars": index_written,
+            "shorting": shorting_written,
             "refetched": [],
         },
     )
@@ -221,6 +224,8 @@ def run_update(date: str) -> int:
     print(f"  투자자 순매수 : {flows_written}행{flow_note}")
     index_note = "" if index_written else " (수집 실패 — 봉은 정상)"
     print(f"  지수         : {index_written}행{index_note}")
+    short_note = "" if shorting_written else " (수집 실패 — 봉은 정상)"
+    print(f"  공매도       : {shorting_written}행{short_note}")
     if result.missing:
         print(f"  당일 데이터 없음: {len(result.missing)}종목 {result.missing[:5]}")
     for w in result.warnings[:5]:
@@ -315,6 +320,43 @@ def run_backfill_flows(end: str, days: int) -> int:
             print(f"  {day} — {n:,}종목")
     print(f"투자자별 순매수 백필 완료: {trading_days}거래일 · {total:,}행")
     return 0
+
+
+def run_backfill_shorting(end: str, days: int) -> int:
+    """공매도를 거슬러 채운다 (SPEC F15, 일회성).
+
+    하위가 20거래일 추이를 보려면 처음 한 번은 과거가 필요하다.
+
+    휴장일은 `update_shorting`이 거래일 판정으로 거른다 — **휴장일에 물으면 직전 거래일 자료가
+    그대로 오기 때문에** 수급 백필과 달리 「빈 응답이라 조용히 넘어간다」가 성립하지 않는다.
+
+    Args:
+        end: 마지막 날 ("YYYYMMDD").
+        days: 거슬러 올라갈 달력 일수.
+
+    Returns:
+        종료 코드. 하루라도 저장했으면 0.
+    """
+    from pipeline import store, update
+
+    try:
+        client = store.get_client()
+    except Exception as exc:  # noqa: BLE001
+        print(f"오류: Supabase 연결 실패: {exc}", file=sys.stderr)
+        return 1
+
+    last = date(int(end[:4]), int(end[4:6]), int(end[6:]))
+    total = trading_days = 0
+    for back in range(days):
+        day = last - timedelta(days=back)
+        n = update.update_shorting(client, day.strftime("%Y%m%d"))
+        if n:
+            trading_days += 1
+            total += n
+            print(f"  {day} — {n:,}종목")
+    store.set_meta(client, "shortingBackfill", {"to": end, "days": days, "rows": total})
+    print(f"공매도 백필 완료: {trading_days}거래일 · {total:,}행")
+    return 0 if total else 1
 
 
 def run_check_drift(date: str) -> int:
@@ -420,6 +462,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar="YEARS",
         help="지수 N년 백필 (2026-09-05, 하위 V12) — 시장당 1회면 3년 729행이 온다",
     )
+    parser.add_argument(
+        "--backfill-shorting",
+        type=int,
+        metavar="DAYS",
+        default=None,
+        help="공매도 소급 수집 — 최근 DAYS일 (F15, 일회성)",
+    )
     parser.add_argument("--date", default=None, help='기준일 "YYYYMMDD" (기본: 오늘)')
     parser.add_argument("--limit", type=int, default=None, help="대상 종목 수 상한 (시험 실행용)")
     args = parser.parse_args(argv)
@@ -448,6 +497,8 @@ def main(argv: list[str] | None = None) -> int:
         return run_backfill_flows(date, args.backfill_flows)
     if args.backfill_index:
         return run_backfill_index(date, args.backfill_index)
+    if args.backfill_shorting:
+        return run_backfill_shorting(date, args.backfill_shorting)
 
     parser.print_help()
     return 0
