@@ -365,3 +365,60 @@ def test_upsert_bars_bulk_with_nothing_makes_no_request() -> None:
     c = FakeClient()
     assert store.upsert_bars_bulk(c, "daily", {}) == 0
     assert c.calls == []
+
+
+# ── D8 거래대금 보존 (v2.5, 2026-09-20) ──────────────────────────
+#
+# 종목축 조회(백필·재백필)에는 거래대금이 없다. `amount=None`을 그대로 upsert에 실으면
+# PostgREST가 그 열을 UPDATE 목록에 넣어 `--fill-amount`로 채워 둔 값을 NULL로 덮는다.
+# 2026-09-19 드리프트 재백필이 2,470종목 3년치를 이렇게 지웠다. 그래서 값이 없으면 열 자체를
+# 보내지 않는다 — 본문에 없는 열은 `ON CONFLICT DO UPDATE` 대상에서 빠진다.
+
+
+def _bar(day: str, amount: int | None) -> Bar:
+    return Bar(date=day, open=100, high=110, low=90, close=105, volume=10, amount=amount)
+
+
+def test_bar_rows_omits_amount_when_missing() -> None:
+    rows = store.bar_rows("005930", "daily", [_bar("2026-09-18", None)])
+    assert "a" not in rows[0]
+    assert rows[0]["c"] == 105          # 나머지 열은 그대로 보낸다
+
+
+def test_bar_rows_keeps_amount_when_present() -> None:
+    rows = store.bar_rows("005930", "daily", [_bar("2026-09-18", 12_345)])
+    assert rows[0]["a"] == 12_345
+
+
+def test_upsert_bars_splits_requests_by_amount_presence() -> None:
+    """PostgREST는 한 배열 안의 키가 같아야 한다 — 두 요청으로 나눈다."""
+    client = FakeClient()
+    store.upsert_bars(
+        client, "005930", "daily", [_bar("2026-09-17", 1_000), _bar("2026-09-18", None)]
+    )
+    sent = [c["rows"] for c in client.calls]
+    assert len(sent) == 2
+    assert all(len({frozenset(r) for r in rows}) == 1 for rows in sent)
+    assert [len(rows) for rows in sent] == [1, 1]
+    with_a = next(rows for rows in sent if "a" in rows[0])
+    assert with_a[0]["d"] == "2026-09-17"
+
+
+def test_upsert_bars_bulk_preserves_amount_across_tickers() -> None:
+    client = FakeClient()
+    store.upsert_bars_bulk(
+        client,
+        "daily",
+        {"005930": [_bar("2026-09-18", None)], "000660": [_bar("2026-09-18", 500)]},
+    )
+    payloads = [c["rows"] for c in client.calls]
+    assert sum(1 for rows in payloads if "a" not in rows[0]) == 1
+    assert sum(1 for rows in payloads if "a" in rows[0]) == 1
+
+
+def test_upsert_bars_sends_one_request_when_all_amounts_missing() -> None:
+    """백필 경로 — 빈 그룹으로 요청을 더 만들지 않는다."""
+    client = FakeClient()
+    bars = [_bar("2026-09-17", None), _bar("2026-09-18", None)]
+    store.upsert_bars(client, "005930", "daily", bars)
+    assert len(client.calls) == 1

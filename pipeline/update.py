@@ -16,8 +16,13 @@ from datetime import date, timedelta
 from pipeline import krx_client, resample, store, validate
 from pipeline.models import Bar, InvestorFlow, ShortVolume, Ticker
 
-# 수정주가 소급 변경을 감지할 때 대조할 최근 거래일 수 (SPEC §6)
+# 수정주가 소급 변경을 감지할 때 끌어올 최근 거래일 수 (SPEC F16)
 DRIFT_CHECK_BARS = 20
+
+# 그중 최근 N거래일은 **비교에서 뺀다** — 정산 유예 (SPEC D7, 2026-09-20).
+# 일일 갱신은 날짜축(원주가), 이 점검은 종목축(수정주가)이라 최근 며칠 값이 서로 다르게 오는
+# 일이 있다. 2026-09-19에 이 차이를 소급 변경으로 읽어 2,762종목 중 2,470종목을 재백필했다.
+DRIFT_SETTLE_BARS = 5
 
 
 @dataclass
@@ -57,21 +62,35 @@ def tail_window_start(iso: str) -> str:
     return min(monday, first).isoformat()
 
 
-def detect_drift(stored: Sequence[Bar], fresh: Sequence[Bar]) -> bool:
+def detect_drift(
+    stored: Sequence[Bar], fresh: Sequence[Bar], settle: int = DRIFT_SETTLE_BARS
+) -> bool:
     """수정주가 소급 변경 여부를 판단한다.
 
     액면분할·증자가 일어나면 KRX가 돌려주는 **과거 수정주가까지 바뀐다**.
     저장분과 새로 받은 값의 같은 날짜 종가가 어긋나면 그 종목은 재백필 대상이다.
 
+    **최근 `settle`거래일은 비교하지 않는다** (SPEC D7). 저장분은 날짜축(원주가)으로 들어오고
+    이 비교분은 종목축(수정주가)이라 최근 며칠은 정당하게 다를 수 있다 — 2026-09-20 실측으로
+    000020·005930·035720 모두 최근 4~5일만 어긋나고 그 이전 52거래일은 완전히 같았다.
+    진짜 소급 변경은 과거 전 구간을 바꾸므로 최근 며칠을 빼도 감지력은 그대로다.
+
     Args:
         stored: DB에 저장된 봉.
         fresh: KRX에서 새로 받은 같은 기간의 봉.
+        settle: 비교에서 뺄 최근 거래일 수.
 
     Returns:
         소급 변경이 감지되면 True.
     """
+    dates = sorted({b.date for b in stored}, reverse=True)
+    if len(dates) <= settle:
+        return False                      # 비교할 확정 구간이 없다
+    cutoff = dates[settle]                # 이 날짜까지만 본다 (최근 settle일 제외)
     fresh_by_date = {b.date: b.close for b in fresh}
     for b in stored:
+        if b.date > cutoff:
+            continue
         other = fresh_by_date.get(b.date)
         if other is not None and other != b.close:
             return True
@@ -279,11 +298,14 @@ def check_drift(
 ) -> list[str]:
     """수정주가 소급 변경이 일어난 종목을 찾는다.
 
+    최근 `DRIFT_SETTLE_BARS`거래일은 정산 유예로 비교에서 빠진다 (SPEC D7) —
+    `bars`가 20이면 실제로 대조하는 구간은 T-5거래일 이전 15거래일이다.
+
     Args:
         client: Supabase 클라이언트.
         tickers: 검사할 종목.
         todate: 기준일 ("YYYYMMDD").
-        bars: 대조할 최근 거래일 수.
+        bars: 끌어올 최근 거래일 수 (이 중 최근 5일은 비교에서 제외).
 
     Returns:
         소급 변경이 감지된 종목 코드 리스트.

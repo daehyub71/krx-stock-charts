@@ -89,9 +89,16 @@ def ticker_rows(tickers: Sequence[Ticker]) -> list[dict[str, str]]:
 
 
 def bar_rows(ticker: str, timeframe: Timeframe, bars: Sequence[Bar]) -> list[dict[str, Any]]:
-    """Bar 리스트를 `ksc_bars` 행으로 변환한다."""
-    return [
-        {
+    """Bar 리스트를 `ksc_bars` 행으로 변환한다.
+
+    **거래대금(`a`)은 값이 있을 때만 넣는다** (SPEC D8). 종목축 조회에는 거래대금이 아예 없어
+    `amount`가 None으로 오는데, 그대로 보내면 upsert가 `--fill-amount`로 채워 둔 값을 NULL로
+    덮는다 — 2026-09-19 재백필이 2,470종목 3년치를 이렇게 지웠다. 액면분할이 일어나도 거래대금
+    (원 단위 금액)은 바뀌지 않으므로, 모르는 값은 건드리지 않는 쪽이 항상 옳다.
+    """
+    rows: list[dict[str, Any]] = []
+    for b in bars:
+        row: dict[str, Any] = {
             "ticker": ticker,
             "timeframe": TIMEFRAME_CODE[timeframe],
             "d": b.date,
@@ -100,10 +107,24 @@ def bar_rows(ticker: str, timeframe: Timeframe, bars: Sequence[Bar]) -> list[dic
             "l": b.low,
             "c": b.close,
             "v": b.volume,
-            "a": b.amount,
         }
-        for b in bars
-    ]
+        if b.amount is not None:
+            row["a"] = b.amount
+        rows.append(row)
+    return rows
+
+
+def _upsert_bar_rows(
+    client: SupabaseLike, rows: Sequence[dict[str, Any]], batch_size: int
+) -> None:
+    """봉 행을 `a` 유무로 나눠 보낸다.
+
+    PostgREST는 한 요청 안의 객체 키가 모두 같아야 하고, 본문에 없는 열은
+    `ON CONFLICT DO UPDATE` 대상에서 빠진다 — 이 성질로 거래대금을 보존한다 (SPEC D8).
+    """
+    for group in ([r for r in rows if "a" in r], [r for r in rows if "a" not in r]):
+        for batch in chunked(group, batch_size):
+            client.table(BARS_TABLE).upsert(batch, on_conflict="ticker,timeframe,d").execute()
 
 
 def upsert_tickers(
@@ -330,8 +351,7 @@ def upsert_bars(
         저장한 행 수.
     """
     rows = bar_rows(ticker, timeframe, bars)
-    for batch in chunked(rows, batch_size):
-        client.table(BARS_TABLE).upsert(batch, on_conflict="ticker,timeframe,d").execute()
+    _upsert_bar_rows(client, rows, batch_size)
     return len(rows)
 
 
@@ -360,8 +380,7 @@ def upsert_bars_bulk(
     rows: list[dict[str, Any]] = []
     for ticker, bars in items.items():
         rows.extend(bar_rows(ticker, timeframe, bars))
-    for batch in chunked(rows, batch_size):
-        client.table(BARS_TABLE).upsert(batch, on_conflict="ticker,timeframe,d").execute()
+    _upsert_bar_rows(client, rows, batch_size)
     return len(rows)
 
 

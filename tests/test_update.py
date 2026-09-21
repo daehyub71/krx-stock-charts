@@ -45,29 +45,52 @@ class TestTailWindowStart:
 
 
 class TestDetectDrift:
-    """수정주가 소급 변경 감지 — 액면분할 시 과거 값까지 바뀐다."""
+    """수정주가 소급 변경 감지 — 액면분할 시 과거 값까지 바뀐다.
+
+    최근 5거래일은 **정산 유예**로 비교에서 빠진다 (SPEC D7). 아래 `DAYS`는 10거래일이므로
+    앞 5일(`DAYS[:5]`)만 대조 대상이고 뒤 5일은 무슨 값이 와도 판정에 영향을 주지 않는다.
+    """
+
+    DAYS = ["2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07",
+            "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14"]
+
+    def series(self, closes: dict[str, int] | None = None) -> list[Bar]:
+        over = closes or {}
+        return [bar(d, over.get(d, 100)) for d in self.DAYS]
 
     def test_no_drift_when_closes_match(self) -> None:
-        stored = [bar("2026-08-13", 100), bar("2026-08-14", 105)]
-        fresh = [bar("2026-08-13", 100), bar("2026-08-14", 105)]
-        assert detect_drift(stored, fresh) is False
+        assert detect_drift(self.series(), self.series()) is False
 
     def test_drift_when_past_close_changed(self) -> None:
         """저장분 100원이 새로 받으니 50원 — 액면분할 신호."""
-        stored = [bar("2026-08-13", 100), bar("2026-08-14", 105)]
-        fresh = [bar("2026-08-13", 50), bar("2026-08-14", 52)]
-        assert detect_drift(stored, fresh) is True
+        assert detect_drift(self.series(), self.series({d: 50 for d in self.DAYS})) is True
+
+    def test_recent_five_sessions_are_ignored(self) -> None:
+        """최근 5거래일만 어긋나면 소급 변경이 아니다 — 원주가·수정주가 계열 차이다.
+
+        2026-09-19 이 구분이 없어 2,762종목 중 2,470종목이 재백필됐다 (SPEC D7).
+        """
+        fresh = self.series({d: 77 for d in self.DAYS[5:]})
+        assert detect_drift(self.series(), fresh) is False
+
+    def test_boundary_sixth_newest_is_compared(self) -> None:
+        """뒤에서 여섯째 날은 유예 밖이라 대조한다 — 경계 한 칸 차이를 고정한다."""
+        assert detect_drift(self.series(), self.series({self.DAYS[4]: 99})) is True
+        assert detect_drift(self.series(), self.series({self.DAYS[5]: 99})) is False
+
+    def test_single_changed_bar_is_enough(self) -> None:
+        assert detect_drift(self.series(), self.series({self.DAYS[2]: 99})) is True
 
     def test_ignores_dates_absent_from_fresh(self) -> None:
         """새 조회에 없는 날짜는 판단 근거가 없으므로 무시한다."""
-        stored = [bar("2026-08-01", 100), bar("2026-08-14", 105)]
-        fresh = [bar("2026-08-14", 105)]
-        assert detect_drift(stored, fresh) is False
+        fresh = [b for b in self.series() if b.date != self.DAYS[0]]
+        assert detect_drift(self.series({self.DAYS[0]: 50}), fresh) is False
 
-    def test_single_changed_bar_is_enough(self) -> None:
-        stored = [bar("2026-08-12", 100), bar("2026-08-13", 100), bar("2026-08-14", 100)]
-        fresh = [bar("2026-08-12", 100), bar("2026-08-13", 99), bar("2026-08-14", 100)]
-        assert detect_drift(stored, fresh) is True
+    def test_short_history_is_safe(self) -> None:
+        """유예 구간보다 짧으면 대조할 확정 구간이 없다 — 신규 상장 종목."""
+        stored = [bar(d, 100) for d in self.DAYS[:5]]
+        fresh = [bar(d, 50) for d in self.DAYS[:5]]
+        assert detect_drift(stored, fresh) is False
 
     def test_empty_inputs_are_safe(self) -> None:
         assert detect_drift([], []) is False
@@ -138,14 +161,16 @@ def test_drift_detection_needs_adjusted_prices() -> None:
 
     날짜축 조회는 원주가라 저장분(수정주가)과 늘 어긋난다 — 액면분할 종목은 정확히 배수로.
     """
-    def bar(close: int) -> _Bar:
-        return _Bar(
-            date="2026-07-20", open=close, high=close, low=close,
-            close=close, volume=1, amount=1,
-        )
+    days = [f"2026-07-{d:02d}" for d in range(6, 21)]   # 유예 5거래일보다 길게
 
-    stored, raw = [bar(1335)], [bar(267)]
-    assert _update.detect_drift(stored, raw), "원주가와 대조하면 늘 어긋난 것으로 잡힌다"
+    def series(close: int) -> list[_Bar]:
+        return [
+            _Bar(date=d, open=close, high=close, low=close, close=close, volume=1, amount=1)
+            for d in days
+        ]
+
+    assert _update.detect_drift(series(1335), series(267)), \
+        "원주가와 대조하면 늘 어긋난 것으로 잡힌다"
 
 
 
