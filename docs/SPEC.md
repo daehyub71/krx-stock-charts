@@ -123,6 +123,7 @@ Supabase(PostgreSQL)에 저장한다. 같은 프로젝트에 다른 서비스의
 - 개인 학습·분석용 — 투자 자문 아님, 실시간 시세 아님(전일까지)
 - **pykrx 1.2.8+는 종목목록·지수구성종목 조회에 KRX 계정을 요구**한다 (OHLCV는 불필요).
   `KRX_ID`/`KRX_PW`를 `.env`(로컬)·Secrets(CI)로 주입한다
+- **pykrx는 import할 때 로그인하며 계정 ID를 표준 출력에 찍는다.** 이 리포와 Actions 로그는 공개이므로 `krx_client._stock()`이 그 구간의 출력을 버리고, 진단 출력도 `mask_credentials()`로 계정을 가린다 (v2.5, 2026-09-23 — `--fill-amount` 실행 로그에서 ID 노출 확인)
 
 ## 7. 마일스톤 개요 (PLAN에서 상세화)
 

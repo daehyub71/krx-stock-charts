@@ -5,7 +5,14 @@
 
 from __future__ import annotations
 
-from pipeline.krx_client import OHLC_TOLERANCE_RATIO, ROUNDING_TOLERANCE_WON, normalize_ohlc
+import pytest
+
+from pipeline import krx_client
+from pipeline.krx_client import (
+    OHLC_TOLERANCE_RATIO,
+    ROUNDING_TOLERANCE_WON,
+    normalize_ohlc,
+)
 
 
 class TestNormalBar:
@@ -128,3 +135,30 @@ class TestCloseOnlyBar:
     def test_partial_zero_is_not_repaired(self) -> None:
         """일부만 0인 경우는 설명되지 않으므로 손대지 않는다."""
         assert normalize_ohlc(100, 0, 90, 105, 10) == (100, 0, 90, 105, 10)
+
+
+# ── 계정 가리기 (2026-09-23) ────────────────────────────────────
+#
+# pykrx 1.2.x는 import할 때 로그인하면서 **KRX 계정 ID를 표준 출력에 찍는다**.
+# 이 리포는 공개이고 Actions 로그도 공개다 — `--fill-amount` 실행 로그에 ID가 남은 것을 확인했다.
+
+
+def test_mask_credentials_hides_id_and_password(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("KRX_ID", "myaccount")
+    monkeypatch.setenv("KRX_PW", "s3cret")
+    text = "로그인 ID: myaccount / pw=s3cret 확인"
+    assert krx_client.mask_credentials(text) == "로그인 ID: *** / pw=*** 확인"
+
+
+def test_mask_credentials_without_env_changes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("KRX_ID", raising=False)
+    monkeypatch.delenv("KRX_PW", raising=False)
+    assert krx_client.mask_credentials("아무 문장") == "아무 문장"
+
+
+def test_quiet_swallows_login_noise(capsys: pytest.CaptureFixture[str]) -> None:
+    """지연 임포트를 감싸는 구간의 출력은 버린다 — 로그인 메시지가 새어 나가지 않는다."""
+    with krx_client._quiet():
+        print("로그인 ID: myaccount")
+        print("KRX 로그인 완료.")
+    assert capsys.readouterr().out == ""

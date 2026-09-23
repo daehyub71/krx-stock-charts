@@ -6,6 +6,8 @@ KRX 호출은 간헐적으로 빈 응답을 반환하므로 재시도와 딜레�
 
 from __future__ import annotations
 
+import contextlib
+import io
 import sys
 import time
 from collections.abc import Callable
@@ -61,12 +63,34 @@ def _retry(fn: Callable[[], T], *, what: str, retries: int | None = None) -> T:
     raise KrxError(f"{what} 실패 ({attempts}회 시도): {last}") from last
 
 
+def mask_credentials(text: str) -> str:
+    """출력에서 KRX 계정을 가린다. 값이 비어 있으면 아무것도 바꾸지 않는다."""
+    import os
+
+    out = text
+    for key in ("KRX_ID", "KRX_PW"):
+        if value := os.getenv(key):
+            out = out.replace(value, "***")
+    return out
+
+
+def _quiet() -> contextlib.ExitStack:
+    """표준 출력·오류를 잠시 버린다."""
+    stack = contextlib.ExitStack()
+    stack.enter_context(contextlib.redirect_stdout(io.StringIO()))
+    stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+    return stack
+
+
 def _stock() -> Any:
     """pykrx.stock 모듈을 지연 임포트한다.
 
-    임포트 시점에 KRX 로그인 메시지가 출력되므로, .env 로딩 이후로 미룬다.
+    임포트 시점에 로그인하면서 **KRX 계정 ID를 표준 출력에 찍는다**. 이 리포는 공개이고
+    Actions 로그도 공개이므로 그 구간의 출력을 버린다 (2026-09-23: `--fill-amount` 실행
+    로그에 ID가 그대로 남은 것을 확인). .env 로딩 이후로 미루는 이유는 그대로다.
     """
-    from pykrx import stock
+    with _quiet():
+        from pykrx import stock
 
     return stock
 
@@ -149,7 +173,7 @@ def diagnose_login() -> None:
             headers={"User-Agent": auth.USER_AGENT, "Referer": auth.LOGIN_PAGE},
             timeout=15,
         )
-        body = resp.text[:300].replace("\n", " ")
+        body = mask_credentials(resp.text[:300].replace("\n", " "))
         print(
             f"진단: 로그인 POST status={resp.status_code} "
             f"type={resp.headers.get('content-type')} bytes={len(resp.content)}",
