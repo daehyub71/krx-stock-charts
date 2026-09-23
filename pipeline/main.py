@@ -233,6 +233,32 @@ def run_update(date: str) -> int:
     return 0
 
 
+def run_rebuild_periods() -> int:
+    """주·월봉을 지우고 일봉에서 다시 만든다 (SPEC D9 전환, 일회성).
+
+    키가 구간 마지막 거래일 → **구간 시작일**로 바뀌므로 기존 행을 덮어쓸 수 없다.
+    D9 이전에 쌓인 유령 부분봉도 이때 함께 사라진다.
+
+    Returns:
+        종료 코드.
+    """
+    import time
+
+    from pipeline import periods
+
+    print("주·월봉 재생성 — 일봉에서 다시 접는다 (키 = 구간 시작일)")
+    began = time.time()
+    try:
+        result = periods.rebuild_periods()
+    except Exception as exc:  # noqa: BLE001
+        print(f"오류: {exc}", file=sys.stderr)
+        return 1
+    print(f"완료 ({(time.time() - began) / 60:.1f}분)")
+    for code in result.inserted:
+        print(f"  {code}: {result.deleted[code]:,}행 삭제 → {result.inserted[code]:,}행 생성")
+    return 0
+
+
 def run_fill_amount(date_str: str) -> int:
     """거래대금을 소급해 채운다 (일회성).
 
@@ -444,6 +470,11 @@ def main(argv: list[str] | None = None) -> int:
         "--fill-amount", action="store_true", help="거래대금 소급 채우기 (일회성)"
     )
     parser.add_argument(
+        "--rebuild-periods",
+        action="store_true",
+        help="주·월봉 전량 재생성 (D9 키 전환 — 일회성)",
+    )
+    parser.add_argument(
         "--check-drift",
         action="store_true",
         help="수정주가 소급 변경 감지 → 해당 종목만 재생성 (주 1회, 오래 걸린다)",
@@ -487,6 +518,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.update:
         return run_update(date)
 
+    if args.rebuild_periods:
+        return run_rebuild_periods()
     if args.fill_amount:
         return run_fill_amount(date)
 

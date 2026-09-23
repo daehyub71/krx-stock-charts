@@ -161,13 +161,14 @@ def _recompute_period(conn: object, code: str, unit: str) -> int:
     """주봉·월봉의 거래대금을 해당 구간 일봉의 합계로 다시 계산한다.
 
     구간에 NULL이 하나라도 있으면 합계도 NULL로 둔다 — 일부만 더한 값은 사실이 아니다.
+    봉을 찾는 키는 **구간 시작일**이다 (D9, v2.6).
     """
     with conn.cursor() as cur:  # type: ignore[attr-defined]
         cur.execute(
             f"""
             with agg as (
               select ticker,
-                     max(d) as last_d,
+                     date_trunc('{unit}', d)::date as period_start,
                      case when count(*) filter (where a is null) > 0 then null
                           else sum(a) end as total
               from ksc_bars
@@ -176,7 +177,7 @@ def _recompute_period(conn: object, code: str, unit: str) -> int:
             )
             update ksc_bars b set a = agg.total
             from agg
-            where b.ticker = agg.ticker and b.timeframe = %s and b.d = agg.last_d
+            where b.ticker = agg.ticker and b.timeframe = %s and b.d = agg.period_start
               and b.a is distinct from agg.total
             """,
             (code,),

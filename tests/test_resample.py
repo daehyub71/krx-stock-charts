@@ -68,7 +68,7 @@ class TestResampleWeekly:
         assert w.high == 130      # 구간 최고
         assert w.low == 80        # 구간 최저
         assert w.volume == 150    # 합계
-        assert w.date == "2026-08-14"  # 구간 마지막 거래일
+        assert w.date == "2026-08-10"  # 구간 시작일 = 그 주 월요일 (D9)
 
     def test_splits_into_two_weeks(self) -> None:
         bars = [
@@ -77,7 +77,7 @@ class TestResampleWeekly:
             bar("2026-08-17", 107, 115, 106, 110, 30),  # 2주차 (월)
         ]
         out = resample(bars, "weekly")
-        assert [b.date for b in out] == ["2026-08-14", "2026-08-17"]
+        assert [b.date for b in out] == ["2026-08-10", "2026-08-17"]  # 각 주의 월요일
         assert [b.open for b in out] == [100, 107]
         assert [b.close for b in out] == [107, 110]
         assert [b.volume for b in out] == [30, 30]
@@ -112,7 +112,7 @@ class TestResampleMonthly:
         assert len(out) == 1
         m = out[0]
         assert (m.open, m.high, m.low, m.close, m.volume) == (100, 140, 85, 125, 60)
-        assert m.date == "2026-08-31"
+        assert m.date == "2026-08-01"  # 구간 시작일 = 그 달 1일 (D9)
 
     def test_splits_by_calendar_month(self) -> None:
         bars = [
@@ -120,7 +120,7 @@ class TestResampleMonthly:
             bar("2026-09-01", 102, 110, 100, 108, 20),
         ]
         out = resample(bars, "monthly")
-        assert [b.date for b in out] == ["2026-08-31", "2026-09-01"]
+        assert [b.date for b in out] == ["2026-08-01", "2026-09-01"]
 
     def test_year_boundary(self) -> None:
         bars = [
@@ -198,3 +198,39 @@ class TestResampleInvariants:
         total = sum(b.volume for b in bars)
         assert sum(b.volume for b in resample(bars, "weekly")) == total
         assert sum(b.volume for b in resample(bars, "monthly")) == total
+
+
+# ── D9 키 고정 (2026-09-23) ─────────────────────────────────────
+#
+# 키가 구간 마지막 거래일이면 진행 중인 주·월의 키가 매일 바뀐다. PK가 달라지니 덮어쓰기가
+# 아니라 새 행이 되고, 하루 갱신마다 부분봉이 하나씩 쌓인다 — (종목, 월) 5,534건이 2행 이상이었다.
+
+
+class TestPeriodKeyIsStable:
+    def test_weekly_key_does_not_move_as_the_week_fills(self) -> None:
+        days = ["2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14"]
+        keys = set()
+        for n in range(1, len(days) + 1):
+            out = resample([bar(d, 100, 110, 90, 105, 10) for d in days[:n]], "weekly")
+            assert len(out) == 1
+            keys.add(out[0].date)
+        assert keys == {"2026-08-10"}, "주가 차오르는 동안 키가 움직였다"
+
+    def test_monthly_key_does_not_move_as_the_month_fills(self) -> None:
+        days = ["2026-09-01", "2026-09-07", "2026-09-15", "2026-09-22"]
+        keys = {resample([bar(d, 100, 110, 90, 105, 10) for d in days[:n]], "monthly")[0].date
+                for n in range(1, len(days) + 1)}
+        assert keys == {"2026-09-01"}
+
+    def test_key_is_the_period_start_even_when_it_is_a_holiday(self) -> None:
+        """8/15(광복절)가 낀 주 — 월요일이 거래일이 아니어도 키는 달력으로 정한다."""
+        out = resample([bar("2026-08-18", 100, 110, 90, 105, 10)], "weekly")
+        assert out[0].date == "2026-08-17"
+
+    def test_values_still_come_from_the_actual_bars(self) -> None:
+        """키만 바뀌었을 뿐 시가·종가는 여전히 첫 봉·마지막 봉의 것이다."""
+        out = resample([
+            bar("2026-08-10", 100, 105, 95, 102, 10),
+            bar("2026-08-14", 103, 120, 100, 118, 20),
+        ], "weekly")
+        assert (out[0].date, out[0].open, out[0].close) == ("2026-08-10", 100, 118)

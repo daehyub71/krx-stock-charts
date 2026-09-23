@@ -9,7 +9,12 @@ D4로 이 계산이 파이프라인에만 존재하게 되었다. 구현이 한 
     고가   = 구간 전체의 최고가
     저가   = 구간 전체의 최저가
     거래량 = 합계
-    날짜   = 구간 마지막 거래일
+    날짜   = **구간 시작일** — 주봉은 그 주 월요일, 월봉은 그 달 1일 (D9, 2026-09-23)
+
+D9 이전에는 날짜가 구간 **마지막 거래일**이었다. 그러면 진행 중인 주·월의 키가 매일 바뀌어
+PK `(ticker, timeframe, d)`가 달라지고, 덮어쓰기가 아니라 **새 행**이 된다 — 하루 갱신마다
+부분봉이 하나씩 쌓였고 (종목, 월) 5,534건이 2행 이상이었다. 달력만으로 정하는 키는 자료가
+늘어도 움직이지 않는다.
 """
 
 from __future__ import annotations
@@ -38,15 +43,26 @@ def week_start(iso: str) -> str:
     return (d - timedelta(days=d.weekday())).isoformat()
 
 
+def month_start(iso: str) -> str:
+    """해당 날짜가 속한 달의 1일을 반환한다."""
+    return _parse(iso).replace(day=1).isoformat()
+
+
 def _bucket_key(iso: str, timeframe: Timeframe) -> str:
-    """봉이 속할 구간의 키를 만든다."""
-    if timeframe == "weekly":
-        return week_start(iso)
-    d = _parse(iso)
-    return f"{d.year:04d}-{d.month:02d}"
+    """봉이 속할 구간의 키 — **그 구간의 시작일**이다 (D9).
+
+    Args:
+        iso: 일봉 날짜 ("YYYY-MM-DD").
+        timeframe: "weekly" | "monthly".
+
+    Returns:
+        주봉이면 그 주 월요일, 월봉이면 그 달 1일. 거래일이 아닐 수 있으나
+        달력만으로 정해지므로 자료가 늘어도 바뀌지 않는다.
+    """
+    return week_start(iso) if timeframe == "weekly" else month_start(iso)
 
 
-def _fold(bars: Sequence[Bar]) -> Bar:
+def _fold(bars: Sequence[Bar], period_start: str) -> Bar:
     """같은 구간의 봉들을 하나로 접는다.
 
     거래대금은 구간 전체에 값이 있을 때만 합산한다 — 일부만 더한 합계는
@@ -54,6 +70,7 @@ def _fold(bars: Sequence[Bar]) -> Bar:
 
     Args:
         bars: 날짜 오름차순으로 정렬된, 같은 구간에 속하는 봉들.
+        period_start: 구간 시작일 — 접힌 봉의 날짜가 된다 (D9).
 
     Returns:
         접힌 봉 하나.
@@ -62,7 +79,7 @@ def _fold(bars: Sequence[Bar]) -> Bar:
     total_amount = None if any(a is None for a in amounts) else sum(a or 0 for a in amounts)
 
     return Bar(
-        date=bars[-1].date,
+        date=period_start,
         open=bars[0].open,
         high=max(b.high for b in bars),
         low=min(b.low for b in bars),
@@ -92,15 +109,15 @@ def resample(bars: Sequence[Bar], timeframe: Timeframe) -> list[Bar]:
 
     ordered = sorted(bars, key=lambda b: b.date)
 
-    groups: list[list[Bar]] = []
+    groups: list[tuple[str, list[Bar]]] = []
     current_key: str | None = None
 
     for b in ordered:
         key = _bucket_key(b.date, timeframe)
         if key != current_key:
-            groups.append([b])
+            groups.append((key, [b]))
             current_key = key
         else:
-            groups[-1].append(b)
+            groups[-1][1].append(b)
 
-    return [_fold(g) for g in groups]
+    return [_fold(g, key) for key, g in groups]
