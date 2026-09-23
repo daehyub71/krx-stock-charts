@@ -631,3 +631,18 @@ D8(보존)이 들어가면 재백필이 거래대금을 건드리지 않는다. 
 | 현상 | 원인 | 조치 |
 |---|---|---|
 | 첫 재생성이 `canceling statement due to statement timeout` | 전 종목(60만 행)을 한 문장으로 돌렸다 | 종목 200개씩 끊고 묶음마다 커밋. 중간에 끊겨도 다시 돌리면 이어서 끝난다 |
+
+---
+
+## 하위 scoring 수집 완료 알림 (2026-09-23)
+
+> 요청 출처: `krx-stock-scoring` SPEC §6.1 — 수집이 끝나면 바로 채점을 시작하게 한다.
+
+- [x] `daily.yml` update 잡 끝에 `Notify scoring` 단계 — `repository_dispatch(upstream_collected)`
+- [x] **토큰이 없으면 건너뛴다**(`if: env.DISPATCH_TOKEN != ''`) · 알림 실패가 수집을 실패로 만들지 않는다
+- [x] payload에 날짜를 담지 않는다 — 수신자가 자기 달력으로 T를 정하고 DB를 다시 검사한다
+- [ ] **`SCORING_DISPATCH_TOKEN` Secret 등록 대기** (사용자 준비물)
+
+토큰은 `daehyub71/krx-stock-scoring` 한 곳만 지정한 fine-grained PAT이고 **Contents 쓰기** 권한이 필요하다
+(repository_dispatch 요건). 기본 `GITHUB_TOKEN`은 다른 리포를 부르지 못한다.
+토큰이 없거나 만료돼도 하위는 23:37 예비 cron으로 돌므로 채점이 멈추지는 않는다.
